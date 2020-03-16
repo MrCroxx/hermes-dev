@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="a2dd6006-4681-461a-be49-0feb042b9ae4" name="Default Changelist" comment="" />
+    <list default="true" id="a2dd6006-4681-461a-be49-0feb042b9ae4" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/component/raft.go" beforeDir="false" afterPath="$PROJECT_DIR$/component/raft.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/main.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/transport/transport.go" beforeDir="false" afterPath="$PROJECT_DIR$/transport/transport.go" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -31,10 +37,14 @@
     </option>
   </component>
   <component name="GOROOT" path="E:\Go" />
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
   <component name="GoLibraries">
     <option name="indexEntireGoPath" value="false" />
   </component>
   <component name="ProjectId" id="1YZ9qqv09ATbKtHhrMUieXqP0bQ" />
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showExcludedFiles" value="true" />
@@ -44,6 +54,7 @@
     <property name="DefaultGoTemplateProperty" value="Go File" />
     <property name="DefaultPlantUmlFileTemplate" value="UML Component" />
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
+    <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
     <property name="WebServerToolWindowFactoryState" value="false" />
     <property name="go.import.settings.migrated" value="true" />
     <property name="last_opened_file_path" value="$USER_HOME$" />
@@ -108,6 +119,10 @@
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
     <state x="747" y="229" key="#com.intellij.ide.util.MemberChooser/0.0.1920.1040/1062.-1080.1920.1040@0.0.1920.1040" timestamp="1583587141800" />
+    <state x="93" y="93" width="1733" height="853" key="DiffContextDialog" timestamp="1584341732256">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state x="93" y="93" width="1733" height="853" key="DiffContextDialog/0.0.1920.1040/1062.-1080.1920.1040@0.0.1920.1040" timestamp="1584341732256" />
     <state x="742" y="266" key="FileChooserDialogImpl" timestamp="1583335196516">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
@@ -144,10 +159,10 @@
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
     <state x="762" y="213" key="com.intellij.openapi.editor.actions.MultiplePasteAction$ClipboardContentChooser/0.0.1920.1040/1062.-1080.1920.1040@0.0.1920.1040" timestamp="1583901287781" />
-    <state x="1062" y="-1010" width="881" height="1027" maximized="true" key="dock-window-1" timestamp="1584333740067">
+    <state x="2190" y="-1129" width="441" height="508" maximized="true" key="dock-window-1" timestamp="1584342251874">
       <screen x="1062" y="-1080" width="1920" height="1040" />
     </state>
-    <state x="1062" y="-1010" width="881" height="1027" maximized="true" key="dock-window-1/0.0.1920.1040/1062.-1080.1920.1040@0.0.1920.1040" timestamp="1584333740067" />
+    <state x="2190" y="-1129" width="441" height="508" maximized="true" key="dock-window-1/0.0.1920.1040/1062.-1080.1920.1040@0.0.1920.1040" timestamp="1584342251874" />
     <state x="1062" y="-981" width="676" height="1027" key="dock-window-1/0.0.1920.1040@0.0.1920.1040" timestamp="1584177330762" />
     <state x="458" y="0" width="743" height="1025" key="dock-window-2" timestamp="1584335559761">
       <screen x="0" y="0" width="1920" height="1040" />
@@ -170,10 +185,10 @@
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
     <state x="553" y="182" key="scopes/0.0.1920.1040/1062.-1080.1920.1040@0.0.1920.1040" timestamp="1583910050930" />
-    <state x="652" y="255" width="672" height="678" key="search.everywhere.popup" timestamp="1584175430599">
+    <state x="653" y="256" width="672" height="678" key="search.everywhere.popup" timestamp="1584340388541">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state x="652" y="255" width="672" height="678" key="search.everywhere.popup/0.0.1920.1040/1062.-1080.1920.1040@0.0.1920.1040" timestamp="1584175430599" />
+    <state x="653" y="256" width="672" height="678" key="search.everywhere.popup/0.0.1920.1040/1062.-1080.1920.1040@0.0.1920.1040" timestamp="1584340388541" />
     <state x="1744" y="-642" key="vcs.readOnlyHandler.ReadOnlyStatusDialog" timestamp="1584086223828">
       <screen x="1062" y="-1080" width="1920" height="1040" />
     </state>
@@ -184,7 +199,7 @@
       <breakpoints>
         <line-breakpoint enabled="true" type="DlvLineBreakpoint">
           <url>file://$PROJECT_DIR$/component/raft.go</url>
-          <line>371</line>
+          <line>357</line>
           <option name="timeStamp" value="1" />
         </line-breakpoint>
         <line-breakpoint enabled="true" type="DlvLineBreakpoint">

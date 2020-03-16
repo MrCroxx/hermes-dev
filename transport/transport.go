@@ -66,8 +66,6 @@ type transport struct {
 	server      RPCServer
 	url         string
 	done        chan struct{}
-	// nclients    map[uint64]RPCClient // node id -> rpc client
-
 }
 
 func NewTransport(podID uint64, url string) Transport {
@@ -76,9 +74,9 @@ func NewTransport(podID uint64, url string) Transport {
 		url:      url,
 		nrafts:   make(map[uint64]Raft),
 		nodeSets: make(map[uint64][]uint64),
-		npods:   make(map[uint64]uint64),
-		clients: make(map[uint64]RPCClient),
-		done:    make(chan struct{}),
+		npods:    make(map[uint64]uint64),
+		clients:  make(map[uint64]RPCClient),
+		done:     make(chan struct{}),
 	}
 }
 
@@ -96,28 +94,14 @@ func (t *transport) Stop() {
 }
 
 func (t *transport) Send(msgs []raftpb.Message) {
-	// 	log.ZAPSugaredLogger().Debugf("npods : %+v", t.npods)
 	for _, m := range msgs {
 		if m.To == 0 {
 			continue
 		}
 		t.mux.Lock()
-		// log.ZAPSugaredLogger().Debugf("to : %d", m.To)
 		c, ok := t.clients[t.npods[m.To]]
 		if ok {
-			// send message
 			_ = c.Send(m)
-			//err := c.Send(m)
-			// report unreachable
-			//if err != nil {
-			//	r, err := t.Raft(m.From)
-			//	if err != nil {
-			//		log.ZAPSugaredLogger().Errorf("Error raised when reporting unreachable.")
-			//	} else {
-			//		r.ReportUnreachable(m.To)
-			//	}
-			//
-			//}
 		} else {
 			// log.ZAPSugaredLogger().Warnf("Node %d metadata not found in pod %d, raft msg ignored.", m.To, t.podID)
 		}

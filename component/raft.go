@@ -202,20 +202,6 @@ func (re *raftEngine) publishEntries(ents []raftpb.Entry) bool {
 
 		log.ZAPSugaredLogger().Debugf("Applied index [%d] -> [%d].", re.appliedIndex, ent.Index)
 		re.appliedIndex = ent.Index
-
-		// TODO : debug
-		//re.LogEntries()
-
-		// special nil commit to signal replay has finished
-		// TODO : ???????
-		//if ent.Index == re.lastIndex {
-		//	select {
-		//	case re.commitC <- nil:
-		//		log.ZAPSugaredLogger().Debugf("Trigger done replaying.")
-		//	case <-re.stopc:
-		//		return false
-		//	}
-		//}
 	}
 	return true
 }
