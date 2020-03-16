@@ -1,0 +1,59 @@
+@startuml
+
+package hermes{
+
+    package raft{
+        interface RaftComponent
+        class raftComponent
+
+        RaftComponent <|.. raftComponent
+    }
+
+    package unit{
+
+        interface Pod
+        class pod
+        interface DataNode
+        class dataNode
+        interface MetaNode
+        class metaNode
+
+
+        Pod <|.. pod
+        MetaNode <|.. metaNode
+        DataNode <|.. dataNode
+
+
+        pod o-- MetaNode
+        pod o-- DataNode
+        pod o-- RaftComponent
+
+
+
+
+    }
+
+    package transport{
+        interface Transport
+        class transport
+        Transport <|.. transport
+    }
+
+
+
+
+    package storage{
+        interface Storage
+        class memoryStorage
+        class fileStorage
+
+        Storage <|.. memoryStorage
+        Storage <|.. fileStorage
+    }
+
+    pod o-- Transport
+    metaNode --> memoryStorage
+    dataNode --> fileStorage
+
+}
+@enduml
