@@ -14,7 +14,6 @@ import (
 	"mrcroxx.io/hermes/transport"
 	"os"
 	"path"
-	"strconv"
 	"time"
 )
 
@@ -66,7 +65,6 @@ type RaftEngine struct {
 	CommitC           <-chan *[]byte
 	ErrorC            <-chan error
 	SnapshotterReadyC <-chan *snap.Snapshotter
-	Raft              transport.Raft
 	DoLead            func(old uint64)
 	AdvanceC          chan<- struct{}
 }
@@ -105,7 +103,6 @@ func NewRaftEngine(cfg RaftEngineConfig) RaftEngine {
 		CommitC:           cc,
 		ErrorC:            ec,
 		SnapshotterReadyC: re.snapshotterReadyC,
-		Raft:              re,
 		DoLead:            re.doLead,
 		AdvanceC:          ac,
 	}
@@ -116,11 +113,11 @@ func (re *raftEngine) doLead(old uint64) {
 }
 
 func (re *raftEngine) getWALDir() string {
-	return path.Join(re.storageDir, strconv.Itoa(int(re.nodeID)), "wal")
+	return path.Join(re.storageDir, "wal")
 }
 
 func (re *raftEngine) getSnapDir() string {
-	return path.Join(re.storageDir, strconv.Itoa(int(re.nodeID)), "snap")
+	return path.Join(re.storageDir, "snap")
 }
 
 func (re *raftEngine) saveSnap(snap raftpb.Snapshot) error {
@@ -232,7 +229,7 @@ func (re *raftEngine) openWAL(snapshot *raftpb.Snapshot) *wal.WAL {
 	log.ZAPSugaredLogger().Infof("Loading WAL at term [%d] and index [%d].", walsnap.Term, walsnap.Index)
 	w, err := wal.Open(re.getWALDir(), walsnap)
 	if err != nil {
-		log.ZAPSugaredLogger().Errorf("Error raised when loading wal, err=%s.", err)
+		log.ZAPSugaredLogger().Errorf("Error raised when loading wal, dir=%s, err=%s.", re.getWALDir(), err)
 	}
 	return w
 }

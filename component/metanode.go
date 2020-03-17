@@ -2,13 +2,11 @@ package component
 
 import (
 	"errors"
-	"fmt"
 	"github.com/coreos/etcd/raft/raftpb"
 	"github.com/coreos/etcd/snap"
 	"mrcroxx.io/hermes/log"
 	"mrcroxx.io/hermes/pkg"
 	"mrcroxx.io/hermes/transport"
-	"sort"
 	"sync"
 	"time"
 )
@@ -30,12 +28,16 @@ type MetaNode interface {
 	NotifyLeadership(nodeID uint64)
 	All() []RaftRecord
 	DoLead(old uint64)
+	Heartbeat(nodeID uint64)
+	WakeUp()
+	Stop()
 }
 
 type metaNode struct {
 	rt                   *RaftTable
 	zoneID               uint64
 	nodeID               uint64
+	podID                uint64
 	storageDir           string
 	doLeadershipTransfer func(podID uint64, old uint64, transferee uint64)
 	doLead               func(old uint64)
@@ -44,18 +46,22 @@ type metaNode struct {
 	snapshotter          *snap.Snapshotter
 	mux                  sync.RWMutex
 	advanceC             chan<- struct{}
+	startDataNode        func(zoneID uint64, nodeID uint64, peers map[uint64]uint64)
+	hbTicker             *time.Ticker
 }
 
 type MetaNodeConfig struct {
 	ZoneID                  uint64
 	NodeID                  uint64
-	Pods                    map[uint64]uint64
+	PodID                   uint64
+	Peers                   map[uint64]uint64
 	Join                    bool
 	StorageDir              string
 	TriggerSnapshotEntriesN uint64
 	SnapshotCatchUpEntriesN uint64
 	Transport               transport.Transport
 	DoLeadershipTransfer    func(podID uint64, old uint64, transferee uint64)
+	StartDataNode           func(zoneID uint64, nodeID uint64, peers map[uint64]uint64)
 }
 
 func NewMetaNode(cfg MetaNodeConfig) MetaNode {
@@ -66,16 +72,18 @@ func NewMetaNode(cfg MetaNodeConfig) MetaNode {
 		rt:                   NewRaftTable(),
 		zoneID:               cfg.ZoneID,
 		nodeID:               cfg.NodeID,
+		podID:                cfg.PodID,
 		storageDir:           cfg.StorageDir,
 		doLeadershipTransfer: cfg.DoLeadershipTransfer,
+		startDataNode:        cfg.StartDataNode,
 	}
 
 	speers := []uint64{}
-	for pid, nid := range cfg.Pods {
+	for pid, nid := range cfg.Peers {
 		err := cfg.Transport.AddNode(pid, nid)
 		if err != nil {
 			log.ZAPSugaredLogger().Fatalf("Error raised when add meta node peers to transport, err=%s.", err)
-			panic(fmt.Sprintf("Error raised when add meta node peers to transport, err=%s.", err))
+			return nil
 		}
 		speers = append(speers, nid)
 	}
@@ -99,9 +107,11 @@ func NewMetaNode(cfg MetaNodeConfig) MetaNode {
 	m.snapshotter = <-re.SnapshotterReadyC
 	m.proposeC = proposeC
 	m.advanceC = re.AdvanceC
+	m.hbTicker = time.NewTicker(time.Second * 30)
 
 	// m.readCommits(re.CommitC, re.ErrorC)
 	go m.readCommits(re.CommitC, re.ErrorC)
+	go m.tickHeartbeat()
 
 	// may init meta zone in raft table
 
@@ -144,7 +154,7 @@ func (m *metaNode) AddRaftZone(zoneID uint64, nodes map[uint64]uint64) error {
 		})
 	}
 	m.propose(MetaCMD{
-		Type:    MetaCMDTYPE_ADD_ZONE,
+		Type:    MetaCMDTYPE_RAFT_ADDZONE,
 		ZoneID:  zoneID,
 		Records: rs,
 	})
@@ -180,12 +190,12 @@ func (m *metaNode) TransferLeadership(zoneID uint64, nodeID uint64) error {
 	}
 	// propose leadership transfer
 	m.propose(MetaCMD{
-		Type:       MetaCMDTYPE_RAFT_TRANSFER_LEADERATHIP,
-		ZoneID:     r.ZoneID,
-		NodeID:     r.NodeID,
-		PodID:      r.PodID,
-		OldNodeID:  oldLeaderID,
-		ExpireTime: time.Now().Add(time.Second * 3),
+		Type:      MetaCMDTYPE_RAFT_TRANSFER_LEADERATHIP,
+		ZoneID:    r.ZoneID,
+		NodeID:    r.NodeID,
+		PodID:     r.PodID,
+		OldNodeID: oldLeaderID,
+		Time:      time.Now().Add(time.Second * 10),
 	})
 	return nil
 }
@@ -210,6 +220,14 @@ func (m *metaNode) NotifyLeadership(nodeID uint64) {
 	})
 }
 
+func (m *metaNode) Heartbeat(nodeID uint64) {
+	m.propose(MetaCMD{
+		Type:   MetaCMDTYPE_NODE_HEARTBEAT,
+		NodeID: nodeID,
+		Time:   time.Now(),
+	})
+}
+
 func (m *metaNode) All() []RaftRecord {
 	return m.rt.All()
 }
@@ -218,13 +236,55 @@ func (m *metaNode) DoLead(old uint64) {
 	m.doLead(old)
 }
 
+func (m *metaNode) Stop() {
+	close(m.proposeC)
+	close(m.confchangeC)
+	m.hbTicker.Stop()
+}
+
+// WakeUp will wake up data nodes that ain't heartbeat for a while.
+func (m *metaNode) WakeUp() {
+	log.ZAPSugaredLogger().Debugf("MetaNode.WakeUp is called, waking up dead data nodes in this pod.")
+	m.mux.Lock()
+	for _, rr := range m.rt.Query(func(rr RaftRecord) bool {
+		tdead := time.Now().Add(-time.Second * 30)
+		if rr.ZoneID != m.zoneID && rr.PodID == m.podID && rr.Heartbeat.Before(tdead) {
+			return true
+		}
+		return false
+	}) {
+		go func() {
+			peerRRs := m.rt.Query(func(prr RaftRecord) bool {
+				if prr.ZoneID == rr.ZoneID {
+					return true
+				}
+				return false
+			})
+			peers := make(map[uint64]uint64)
+			for _, prr := range peerRRs {
+				peers[prr.PodID] = prr.NodeID
+			}
+			m.startDataNode(rr.ZoneID, rr.NodeID, peers)
+		}()
+	}
+	m.mux.Unlock()
+
+}
+
+func (m *metaNode) tickHeartbeat() {
+	for _ = range m.hbTicker.C {
+		m.Heartbeat(m.nodeID)
+		go m.WakeUp()
+	}
+}
+
 // basic methods
 
 func (m *metaNode) handleMetaCMD(cmd MetaCMD) {
 	switch cmd.Type {
-	case MetaCMDTYPE_ADD_ZONE:
+	case MetaCMDTYPE_RAFT_ADDZONE:
 		// only check if zone id exists, other checks in MetaNode.AddRaftZone
-		m.rt.InsertIfNotExist(
+		ins := m.rt.InsertIfNotExist(
 			cmd.Records,
 			func(rr RaftRecord) bool {
 				if rr.ZoneID == cmd.ZoneID {
@@ -233,8 +293,28 @@ func (m *metaNode) handleMetaCMD(cmd MetaCMD) {
 				return false
 			},
 		)
+		if ins == 0 {
+			break
+		}
+		diz := false
+		peers := make(map[uint64]uint64)
+		zid := uint64(0)
+		nid := uint64(0)
+		for _, rr := range cmd.Records {
+			peers[rr.PodID] = rr.NodeID
+			zid = rr.ZoneID
+			if rr.ZoneID != m.zoneID && rr.PodID == m.podID {
+				diz = true
+				nid = rr.NodeID
+			}
+		}
+		if !diz {
+			break
+		}
+		m.startDataNode(zid, nid, peers)
+
 	case MetaCMDTYPE_RAFT_TRANSFER_LEADERATHIP:
-		if time.Now().Before(cmd.ExpireTime) {
+		if time.Now().Before(cmd.Time) {
 			m.doLeadershipTransfer(cmd.PodID, cmd.OldNodeID, cmd.NodeID)
 		}
 	case MetaCMDTYPE_RAFT_NOTIFY_LEADERSHIP:
@@ -251,6 +331,18 @@ func (m *metaNode) handleMetaCMD(cmd MetaCMD) {
 				} else {
 					rr.IsLeader = false
 				}
+			},
+		)
+	case MetaCMDTYPE_NODE_HEARTBEAT:
+		m.rt.Update(
+			func(rr RaftRecord) bool {
+				if rr.NodeID == cmd.NodeID {
+					return true
+				}
+				return false
+			},
+			func(rr *RaftRecord) {
+				rr.Heartbeat = cmd.Time
 			},
 		)
 	}
@@ -279,17 +371,10 @@ func (m *metaNode) readCommits(commitC <-chan *[]byte, errorC <-chan error) {
 			}
 			log.ZAPSugaredLogger().Infof("Loading snapshot at term [%d] and index [%d]", snapshot.Metadata.Term, snapshot.Metadata.Index)
 			var sn []RaftRecord
-			pkg.Decode(snapshot.Data, &sn)
-			log.ZAPSugaredLogger().Debugf("apply not empty snapshot : ")
-			sort.Slice(sn, func(i, j int) bool {
-				if sn[i].ZoneID == sn[j].ZoneID {
-					return sn[i].NodeID < sn[j].NodeID
-				} else {
-					return sn[i].ZoneID < sn[j].ZoneID
-				}
-			})
-			for _, r := range sn {
-				log.ZAPSugaredLogger().Infof("%+v", r)
+			err = pkg.Decode(snapshot.Data, &sn)
+			if err != nil {
+				log.ZAPSugaredLogger().Fatalf("Error raised when decoding snapshot, err=%s.", err)
+				panic(err)
 			}
 			err = m.recoverFromSnapshot(snapshot.Data)
 			if err != nil {
@@ -315,7 +400,7 @@ func (m *metaNode) readCommits(commitC <-chan *[]byte, errorC <-chan error) {
 	}
 	if err, ok := <-errorC; ok {
 		log.ZAPSugaredLogger().Fatalf("Error raised from raft engine, err=%s.", err)
-		return
+		panic(err)
 	}
 }
 

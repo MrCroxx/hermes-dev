@@ -11,13 +11,17 @@ import (
 )
 
 // errors
-func errPodNotExists(podID uint64) error { return errors.New(fmt.Sprintf("pod %d not exists")) }
+func errPodNotExists(podID uint64) error { return errors.New(fmt.Sprintf("pod %d not exists", podID)) }
 
-func errNodeNotExists(nodeID uint64) error { return errors.New(fmt.Sprintf("node %d not exists")) }
+func errNodeNotExists(nodeID uint64) error {
+	return errors.New(fmt.Sprintf("node %d not exists", nodeID))
+}
 
-func errPodExists(podID uint64) error { return errors.New(fmt.Sprintf("pod %d already exists")) }
+func errPodExists(podID uint64) error { return errors.New(fmt.Sprintf("pod %d already exists", podID)) }
 
-func errNodeExists(nodeID uint64) error { return errors.New(fmt.Sprintf("node %d already exists")) }
+func errNodeExists(nodeID uint64) error {
+	return errors.New(fmt.Sprintf("node %d already exists", nodeID))
+}
 
 func errRaftNotExists(nodeID uint64) error {
 	return errors.New(fmt.Sprintf("raft %d not exists, maybe node %d is not a local node", nodeID, nodeID))
@@ -50,6 +54,7 @@ type Transport interface {
 	RemovePod(podID uint64) error
 	AddNode(podID uint64, nodeID uint64) error
 	BindRaft(nodeID uint64, raft Raft) error
+	UnbindRaft(nodeID uint64) error
 	RemoveNode(nodeID uint64) error
 	Raft(nodeID uint64) (Raft, error)
 	// SendSnapshot(m snap.Message)
@@ -110,19 +115,20 @@ func (t *transport) Send(msgs []raftpb.Message) {
 }
 
 func (t *transport) AddPod(podID uint64, url string) (err error) {
+	t.mux.Lock()
+	defer t.mux.Unlock()
 	if _, exists := t.clients[podID]; exists {
 		return errPodExists(podID)
 	}
 	c := NewRPCClient(url)
-	t.mux.Lock()
 	t.clients[podID] = c
 	t.nodeSets[podID] = []uint64{}
-	t.mux.Unlock()
 	return
 }
 
 func (t *transport) RemovePod(podID uint64) (err error) {
 	t.mux.Lock()
+	defer t.mux.Unlock()
 	if c, ok := t.clients[podID]; ok {
 		defer c.Close()
 		delete(t.clients, podID)
@@ -130,17 +136,16 @@ func (t *transport) RemovePod(podID uint64) (err error) {
 	} else {
 		err = errPodNotExists(podID)
 	}
-	t.mux.Unlock()
 	return
 }
 
 func (t *transport) AddNode(podID uint64, nodeID uint64) (err error) {
+	t.mux.Lock()
+	defer t.mux.Unlock()
 	if _, exists := t.clients[podID]; exists {
 		if _, ok := t.npods[nodeID]; !ok {
-			t.mux.Lock()
 			t.npods[nodeID] = podID
 			t.nodeSets[podID] = append(t.nodeSets[podID], nodeID)
-			t.mux.Unlock()
 		} else {
 			return errNodeExists(nodeID)
 		}
@@ -151,22 +156,31 @@ func (t *transport) AddNode(podID uint64, nodeID uint64) (err error) {
 }
 
 func (t *transport) BindRaft(nodeID uint64, raft Raft) (err error) {
+	t.mux.Lock()
+	defer t.mux.Unlock()
 	if _, exists := t.clients[t.podID]; exists {
-		t.mux.Lock()
 		t.nrafts[nodeID] = raft
-		t.mux.Unlock()
 	} else {
 		return errNodeNotExists(nodeID)
 	}
 	return
 }
 
+func (t *transport) UnbindRaft(nodeID uint64) (err error) {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	if _, exists := t.nrafts[nodeID]; exists {
+		delete(t.nrafts, nodeID)
+	}
+	return
+}
+
 func (t *transport) RemoveNode(nodeID uint64) (err error) {
+	t.mux.Lock()
+	defer t.mux.Unlock()
 	if _, exists := t.npods[nodeID]; exists {
-		t.mux.Lock()
 		delete(t.npods, nodeID)
 		delete(t.nrafts, nodeID)
-		t.mux.Unlock()
 	} else {
 		return errNodeNotExists(nodeID)
 	}

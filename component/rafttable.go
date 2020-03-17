@@ -2,13 +2,15 @@ package component
 
 import (
 	"mrcroxx.io/hermes/pkg"
+	"time"
 )
 
 type RaftRecord struct {
-	ZoneID   uint64
-	NodeID   uint64
-	PodID    uint64
-	IsLeader bool
+	ZoneID    uint64
+	NodeID    uint64
+	PodID     uint64
+	IsLeader  bool
+	Heartbeat time.Time
 }
 
 type RaftTable struct {

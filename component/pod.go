@@ -2,15 +2,15 @@ package component
 
 import (
 	"errors"
-	"github.com/coreos/etcd/raft/raftpb"
+	"fmt"
 	"mrcroxx.io/hermes/config"
 	"mrcroxx.io/hermes/log"
 	"mrcroxx.io/hermes/transport"
+	"path"
 )
 
 var (
-	errMetaNodeNotExist        = errors.New("meta node in this pod not exist")
-	metaNodeIDOffset    uint64 = 10000
+	errMetaNodeNotExist = errors.New("meta node in this pod not exist")
 )
 
 // raft info struct
@@ -42,12 +42,6 @@ type Pod interface {
 	All() ([]RaftRecord, error)
 }
 
-type chans struct {
-	proposeC    chan<- []byte
-	confChangeC chan<- raftpb.ConfChange
-	errorC      <-chan error
-}
-
 // pod
 type pod struct {
 	podID                   uint64              // pod id
@@ -55,11 +49,11 @@ type pod struct {
 	storageDir              string              // path to storage
 	transport               transport.Transport // transport engine
 	errC                    chan<- error        // send pod errors
-	meta                    MetaNode            // mate node chans
-	nodes                   map[uint64]*chans   // node id -> node chan
+	meta                    MetaNode            // mate node
+	nodes                   map[uint64]DataNode // node id -> data node
 	triggerSnapshotEntriesN uint64              // entries count to trigger raft snapshot
 	snapshotCatchUpEntriesN uint64              // entries count for slow follower catch up before compacting
-	// cmdC      <-chan command.PodCMD // receive user cmds
+	metaZoneOffset          uint64
 }
 
 func NewPod(
@@ -72,12 +66,12 @@ func NewPod(
 		podID:                   cfg.PodID,
 		pods:                    cfg.Pods,
 		storageDir:              cfg.StorageDir,
-		triggerSnapshotEntriesN: cfg.Meta.TriggerSnapshotEntriesN,
-		snapshotCatchUpEntriesN: cfg.Meta.SnapshotCatchUpEntriesN,
-		// cmdC:      cmdC,
-		errC:      ec,
-		nodes:     make(map[uint64]*chans),
-		transport: transport.NewTransport(cfg.PodID, cfg.Pods[cfg.PodID]),
+		triggerSnapshotEntriesN: cfg.TriggerSnapshotEntriesN,
+		snapshotCatchUpEntriesN: cfg.SnapshotCatchUpEntriesN,
+		metaZoneOffset:          cfg.MetaZoneOffset,
+		errC:                    ec,
+		nodes:                   make(map[uint64]DataNode),
+		transport:               transport.NewTransport(cfg.PodID, cfg.Pods[cfg.PodID]),
 	}
 
 	// init transport
@@ -104,24 +98,48 @@ func (p *pod) ConnectCluster() {
 }
 
 func (p *pod) StartMetaNode() {
-	nodeID := p.podID + metaNodeIDOffset
+	nodeID := p.podID + p.metaZoneOffset
 	peers := make(map[uint64]uint64)
 	for podID, _ := range p.pods {
-		peers[podID] = podID + metaNodeIDOffset
+		peers[podID] = podID + p.metaZoneOffset
 	}
-	//p.meta = NewMetaNode(p.podID, nodeID, peers, p.transport, p.storageDir, p.DoLeadershipTransfer)
-	// TODO : cfg
+
 	p.meta = NewMetaNode(MetaNodeConfig{
-		ZoneID:                  metaNodeIDOffset,
+		ZoneID:                  p.metaZoneOffset,
 		NodeID:                  nodeID,
-		Pods:                    peers,
+		PodID:                   p.podID,
+		Peers:                   peers,
 		Join:                    false,
-		StorageDir:              p.storageDir,
+		StorageDir:              path.Join(p.storageDir, fmt.Sprintf("%d", nodeID)),
 		TriggerSnapshotEntriesN: p.triggerSnapshotEntriesN,
 		SnapshotCatchUpEntriesN: p.snapshotCatchUpEntriesN,
 		Transport:               p.transport,
 		DoLeadershipTransfer:    p.DoLeadershipTransfer,
+		StartDataNode:           p.StartDataNode,
 	})
+	if p.meta == nil {
+		log.ZAPSugaredLogger().Fatalf("Failed to create meta node.")
+		panic(nil)
+	}
+}
+
+func (p *pod) StartDataNode(zoneID uint64, nodeID uint64, peers map[uint64]uint64) {
+	d := NewDataNode(DataNodeConfig{
+		ZoneID:                  zoneID,
+		NodeID:                  nodeID,
+		Peers:                   peers,
+		Join:                    false,
+		StorageDir:              path.Join(p.storageDir, fmt.Sprintf("%d", nodeID)),
+		TriggerSnapshotEntriesN: p.triggerSnapshotEntriesN,
+		SnapshotCatchUpEntriesN: p.snapshotCatchUpEntriesN,
+		Transport:               p.transport,
+		NotifyLeaderShip:        p.meta.NotifyLeadership,
+		Heartbeat:               p.meta.Heartbeat,
+	})
+	if d == nil {
+		log.ZAPSugaredLogger().Error("Error raised when add data node")
+	}
+	p.nodes[nodeID] = d
 }
 
 func (p *pod) All() ([]RaftRecord, error) {

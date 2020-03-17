@@ -58,7 +58,7 @@ func (s *rpcServer) handleRaft(c *tcpx.Context) {
 	}
 	raft, err := s.transport.Raft(m.To)
 	if err != nil {
-		log.ZAPSugaredLogger().Warnf("Not a message to this pod, nodeID=%d, err=%s.", m.To, err)
+		log.ZAPSugaredLogger().Infof("Not a message to this pod, nodeID=%d, err=%s.", m.To, err)
 		return
 	}
 	_ = raft.Process(context.TODO(), m)

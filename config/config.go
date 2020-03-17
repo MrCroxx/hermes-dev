@@ -8,15 +8,12 @@ import (
 // Hermes configuration struct
 
 type HermesConfig struct {
-	PodID      uint64            `yaml:"PodID"`      // local pod id
-	Pods       map[uint64]string `yaml:"Pods"`       // pod id -> url
-	StorageDir string            `yaml:"StorageDir"` // local storage path
-	Meta       Meta              `yaml:"Meta"`
-}
-
-type Meta struct {
-	TriggerSnapshotEntriesN uint64 `yaml:"TriggerSnapshotEntriesN"` // entries count when trigger snapshot
-	SnapshotCatchUpEntriesN uint64 `yaml:"SnapshotCatchUpEntriesN"` // entries count for slow followers to catch up before compacting
+	PodID                   uint64            `yaml:"PodID"`                   // local pod id
+	Pods                    map[uint64]string `yaml:"Pods"`                    // pod id -> url
+	StorageDir              string            `yaml:"StorageDir"`              // local storage path
+	TriggerSnapshotEntriesN uint64            `yaml:"TriggerSnapshotEntriesN"` // entries count when trigger snapshot
+	SnapshotCatchUpEntriesN uint64            `yaml:"SnapshotCatchUpEntriesN"` // entries count for slow followers to catch up before compacting
+	MetaZoneOffset          uint64            `yaml:"MetaZoneOffset"`          // zone id and node id offset for meta nodes
 }
 
 func ParseHermesConfigFromFile(path string) (cfg *HermesConfig, err error) {
