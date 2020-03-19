@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hermes WebUI</title>
+    <link rel="stylesheet" type="text/css" href="/static/css/element.css"/>
+    <link rel="stylesheet" type="text/css" href="/static/css/hermes.css"/>
+</head>
+<body>
+<div id="app">
+    <el-container>
+        <el-aside width="200px">
+            <el-menu
+                    default-active="1"
+                    @select="handleSelect">
+
+                <el-menu-item index="1">
+                    <i class="el-icon-menu"></i>
+                    <span slot="title">Overview</span>
+                </el-menu-item>
+
+                <el-submenu index="2">
+                    <template slot="title">
+                        <i class="el-icon-location"></i>
+                        <span>DataNodes</span>
+                    </template>
+                    <el-menu-item-group>
+                        <template slot="title">分组一</template>
+                        <el-menu-item index="2-1">选项1</el-menu-item>
+                        <el-menu-item index="2-2">选项2</el-menu-item>
+                    </el-menu-item-group>
+                    <el-menu-item-group title="分组2">
+                        <el-menu-item index="2-3">选项3</el-menu-item>
+                    </el-menu-item-group>
+                    <el-submenu index="2-4">
+                        <template slot="title">选项4</template>
+                        <el-menu-item index="2-4-1">选项1</el-menu-item>
+                    </el-submenu>
+                </el-submenu>
+
+                <el-menu-item index="3">
+                    <i class="el-icon-setting"></i>
+                    <span slot="title">Config</span>
+                </el-menu-item>
+            </el-menu>
+        </el-aside>
+        <el-container>
+            <template v-if="tab=='1'">
+                <el-header>
+                    <h1>Hermes Overview</h1>
+                </el-header>
+                <el-main>
+                    <el-row>
+                        <el-col>
+                            <h2>Meta Zone</h2>
+                        </el-col>
+                    </el-row>
+                    <el-row>
+                        <el-col>
+                            <el-table :data="metazone" :row-class-name="isDead">
+                                <el-table-column prop="ZoneID" label="ZoneID"></el-table-column>
+                                <el-table-column prop="NodeID" label="NodeID"></el-table-column>
+                                <el-table-column prop="PodID" label="PodID"></el-table-column>
+                                <el-table-column prop="IsLeader" label="IsLeader"></el-table-column>
+                                <el-table-column prop="HeartbeatStr" label="Heartbeat"></el-table-column>
+                            </el-table>
+                        </el-col>
+                    </el-row>
+                    <el-row>
+                        <el-col>
+                            <h2>Data Zones</h2>
+                        </el-col>
+                    </el-row>
+                    <el-row>
+                        <el-col>
+                            <template v-for="(v,k,i) in zones">
+                                <h3>ZoneID : {{k}}</h3>
+                                <el-table :data="v" :row-class-name="isDead">
+                                    <el-table-column prop="ZoneID" label="ZoneID"></el-table-column>
+                                    <el-table-column prop="NodeID" label="NodeID"></el-table-column>
+                                    <el-table-column prop="PodID" label="PodID"></el-table-column>
+                                    <el-table-column prop="IsLeader" label="IsLeader"></el-table-column>
+                                    <el-table-column prop="DeletedIndex" label="DeletedIndex"></el-table-column>
+                                    <el-table-column prop="PersistedIndex" label="PersistedIndex"></el-table-column>
+                                    <el-table-column prop="CachedIndex" label="CachedIndex"></el-table-column>
+                                    <el-table-column prop="FreshIndex" label="FreshIndex"></el-table-column>
+                                    <el-table-column prop="HeartbeatStr" label="Heartbeat"></el-table-column>
+                                </el-table>
+                            </template>
+                        </el-col>
+                    </el-row>
+                </el-main>
+            </template>
+
+            <template v-if="tab=='3'">
+                <el-header>
+                    <h1>Hermes Config</h1>
+                </el-header>
+                <el-main>
+                    <el-row>
+                        <el-col>
+                            <el-table :data="config">
+                                <el-table-column prop="key" label="Key"></el-table-column>
+                                <el-table-column prop="val" label="Value"></el-table-column>
+                            </el-table>
+                        </el-col>
+                    </el-row>
+                </el-main>
+            </template>
+        </el-container>
+    </el-container>
+</div>
+<script src="/static/js/vue.js"></script>
+<script src="/static/js/vue-resource.js"></script>
+<script src="/static/js/element.js"></script>
+<script>
+    window.onload = function () {
+        var app = new Vue({
+            el: '#app',
+            data: {
+                message: 'Hello Hermes!',
+                metadata: null,
+                ticker: null,
+                tab: "1",
+                config: [],
+                zones: {},
+                metazone: [],
+            },
+            created: function () {
+                console.log("Hello Hermes!");
+                this.ticker = setInterval(this.getMetadata, 1000);
+            },
+            methods: {
+                handleSelect(key, keyPath) {
+                    this.tab = key;
+                },
+                date2string(date) {
+                    return `${date.getFullYear()}-${date.getMonth().toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`
+                },
+                isDead({row, rowIndex}) {
+                    if (row.Heartbeat.getTime() < ((new Date()).getTime() - 10 * 1000)) {
+                        return 'warning-row'
+                    }
+                    return ''
+                },
+                getMetadata() {
+                    this.$http.get("/json/metadata").then(
+                        response => {
+                            this.metadata = response.data;
+                            // parse config
+                            config = this.metadata.Config;
+                            tmp = [];
+                            for (var k in config) {
+                                if (k != "Pods") {
+                                    tmp.push({"key": k, "val": config[k]})
+                                } else {
+                                    s = "";
+                                    for (var i in config[k]) {
+                                        s += "<" + i + " : " + config[k][i] + "> ";
+                                    }
+                                    tmp.push({"key": k, "val": s})
+
+                                }
+                            }
+                            this.config = tmp;
+                            // parse zone
+                            metazone = [];
+                            zones = {};
+                            metaZoneOffset = config.MetaZoneOffset;
+                            for (var i in this.metadata.RaftRecords) {
+                                // raw raft record
+                                rrr = this.metadata.RaftRecords[i];
+
+                                rr = {
+                                    ZoneID: rrr.ZoneID,
+                                    NodeID: rrr.NodeID,
+                                    PodID: rrr.PodID,
+                                    IsLeader: (rrr.IsLeader) ? ("√") : (""),
+                                    Heartbeat: new Date(rrr.Heartbeat),
+                                    HeartbeatStr: this.date2string(new Date(rrr.Heartbeat)),
+                                };
+                                if (rrr.Extra != "") {
+                                    extra = JSON.parse(rrr.Extra);
+                                    rr.DeletedIndex = extra.DeletedIndex;
+                                    rr.PersistedIndex = extra.PersistedIndex;
+                                    rr.CachedIndex = extra.CachedIndex;
+                                    rr.FreshIndex = extra.FreshIndex;
+                                }
+
+
+                                if (rr.ZoneID == metaZoneOffset) {
+                                    metazone.push(rr);
+                                    continue;
+                                }
+                                zid = rr.ZoneID;
+                                if (zones[zid] == undefined) {
+                                    zones[zid] = [];
+                                }
+                                zones[zid].push(rr);
+                            }
+                            this.zones = zones;
+                            this.metazone = metazone;
+
+                            console.log(response.data)
+                        },
+                        response => {
+                            console.log("error raised when getting meta data json")
+                        },
+                    );
+                }
+            }
+        });
+    }
+</script>
+</body>
+</html>

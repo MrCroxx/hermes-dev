@@ -6,11 +6,12 @@ import (
 )
 
 type RaftRecord struct {
-	ZoneID    uint64
-	NodeID    uint64
-	PodID     uint64
-	IsLeader  bool
-	Heartbeat time.Time
+	ZoneID    uint64    `json:"ZoneID"`
+	NodeID    uint64    `json:"NodeID"`
+	PodID     uint64    `json:"PodID"`
+	IsLeader  bool      `json:"IsLeader"`
+	Heartbeat time.Time `json:"Heartbeat"`
+	Extra     string    `json:"Extra"`
 }
 
 type RaftTable struct {

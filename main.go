@@ -146,4 +146,11 @@ go run mrcroxx.io/hermes -c f:\hermes-4.yaml
 
 go run mrcroxx.io/hermes -c f:\hermes-5.yaml
 
+
+wget https://unpkg.com/element-ui@2.13.0/lib/theme-chalk/index.css
+wget https://unpkg.com/element-ui@2.13.0/lib/theme-chalk/fonts/element-icons.woff
+wget https://unpkg.com/element-ui@2.13.0/lib/theme-chalk/fonts/element-icons.ttf
+wget https://unpkg.com/element-ui@2.13.0/lib/index.js
+
+
 */

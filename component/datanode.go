@@ -1,6 +1,7 @@
 package component
 
 import (
+	"encoding/json"
 	"github.com/coreos/etcd/raft/raftpb"
 	"github.com/coreos/etcd/snap"
 	"mrcroxx.io/hermes/log"
@@ -12,7 +13,16 @@ import (
 )
 
 type DataNode interface {
+	Metadata() []byte
+	DoLead(old uint64)
 	Stop()
+}
+
+type DataNodeMetadata struct {
+	DeletedIndex   uint64 `json:"DeletedIndex"`
+	PersistedIndex uint64 `json:"PersistedIndex"`
+	CachedIndex    uint64 `json:"CachedIndex"`
+	FreshIndex     uint64 `json:"FreshIndex"`
 }
 
 type dataNode struct {
@@ -27,7 +37,7 @@ type dataNode struct {
 	mux         sync.RWMutex
 	advanceC    chan<- struct{}
 	hbTicker    *time.Ticker
-	heartbeat   func(nodeID uint64)
+	heartbeat   func(nodeID uint64, extra []byte)
 	peers       map[uint64]uint64
 	transport   transport.Transport
 }
@@ -42,7 +52,7 @@ type DataNodeConfig struct {
 	SnapshotCatchUpEntriesN uint64
 	Transport               transport.Transport
 	NotifyLeaderShip        func(nodeID uint64)
-	Heartbeat               func(nodeID uint64)
+	Heartbeat               func(nodeID uint64, extra []byte)
 }
 
 func NewDataNode(cfg DataNodeConfig) DataNode {
@@ -107,6 +117,22 @@ func (d *dataNode) Stop() {
 	}
 }
 
+func (d *dataNode) DoLead(old uint64) { d.doLead(old) }
+
+func (d *dataNode) Metadata() []byte {
+
+	d.mux.Lock()
+	defer d.mux.Unlock()
+	di, pi, ci, fi := d.ds.Indexes()
+	s, _ := json.Marshal(DataNodeMetadata{
+		DeletedIndex:   di,
+		PersistedIndex: pi,
+		CachedIndex:    ci,
+		FreshIndex:     fi,
+	})
+	return s
+}
+
 func (d *dataNode) handleDataCMD(cmd DataCMD) {
 	switch cmd.Type {
 	case DataCMDTYPE_APPEND:
@@ -121,7 +147,7 @@ func (d *dataNode) propose(cmd DataCMD) {
 
 func (d *dataNode) tickHeartbeat() {
 	for _ = range d.hbTicker.C {
-		d.heartbeat(d.nodeID)
+		d.heartbeat(d.nodeID, d.Metadata())
 	}
 }
 
@@ -140,13 +166,6 @@ func (d *dataNode) readCommits(commitC <-chan *[]byte, errorC <-chan error) {
 				return
 			}
 			log.ZAPSugaredLogger().Infof("Loading snapshot at term [%d] and index [%d]", snapshot.Metadata.Term, snapshot.Metadata.Index)
-			var sn []RaftRecord
-			err = pkg.Decode(snapshot.Data, &sn)
-			if err != nil {
-				log.ZAPSugaredLogger().Fatalf("Error raised when decoding snapshot, err=%s.", err)
-				d.Stop()
-				return
-			}
 			err = d.recoverFromSnapshot(snapshot.Data)
 			if err != nil {
 				log.ZAPSugaredLogger().Fatalf("Error raised when recovering from snapshot, err=%s.", err)

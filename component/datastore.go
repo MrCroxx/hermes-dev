@@ -28,6 +28,7 @@ type DataStore interface {
 	CompactStorage(n uint64)
 	GetSnapshot() ([]byte, error)
 	RecoverFromSnapshot([]byte) error
+	Indexes() (deletedIndex uint64, persistedIndex uint64, cachedIndex uint64, freshIndex uint64)
 }
 
 type dataStore struct {
@@ -133,6 +134,10 @@ func (ds *dataStore) LenPersisted() uint64 {
 		}
 	}
 	return t - s
+}
+
+func (ds *dataStore) Indexes() (deletedIndex uint64, persistedIndex uint64, cachedIndex uint64, freshIndex uint64) {
+	return ds.DeletedIndex, ds.PersistedIndex, ds.CachedIndex, ds.FreshIndex
 }
 
 func (ds *dataStore) CompactStorage(n uint64) {

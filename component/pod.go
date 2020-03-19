@@ -1,11 +1,13 @@
 package component
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"mrcroxx.io/hermes/config"
 	"mrcroxx.io/hermes/log"
 	"mrcroxx.io/hermes/transport"
+	"net/http"
 	"path"
 )
 
@@ -13,23 +15,9 @@ var (
 	errMetaNodeNotExist = errors.New("meta node in this pod not exist")
 )
 
-// raft info struct
-type RaftInfo struct {
-	ZoneID uint64
-	PodID  uint64
-	NodeID uint64
-}
-
-type RaftInfoTable []RaftInfo
-
-func (rt RaftInfoTable) Filter(f func(ri RaftInfo) bool) []RaftInfo {
-	result := []RaftInfo{}
-	for _, ri := range rt {
-		if f(ri) {
-			result = append(result, ri)
-		}
-	}
-	return result
+type Metadata struct {
+	Config      config.HermesConfig
+	RaftRecords []RaftRecord
 }
 
 type Pod interface {
@@ -53,7 +41,8 @@ type pod struct {
 	nodes                   map[uint64]DataNode // node id -> data node
 	triggerSnapshotEntriesN uint64              // entries count to trigger raft snapshot
 	snapshotCatchUpEntriesN uint64              // entries count for slow follower catch up before compacting
-	metaZoneOffset          uint64
+	metaZoneOffset          uint64              // zone id and node id offset for meta zone
+	cfg                     config.HermesConfig // hermes config for pod constructing
 }
 
 func NewPod(
@@ -62,7 +51,8 @@ func NewPod(
 ) (Pod, <-chan error) {
 	// init pod struct
 	ec := make(chan error)
-	newPod := &pod{
+	p := &pod{
+		cfg:                     cfg,
 		podID:                   cfg.PodID,
 		pods:                    cfg.Pods,
 		storageDir:              cfg.StorageDir,
@@ -77,12 +67,18 @@ func NewPod(
 	// init transport
 	// err returns `nil` if transport is ready
 	log.ZAPSugaredLogger().Debugf("starting transport ...")
-	if err := newPod.transport.Start(); err != nil {
-		newPod.errC <- err
+	if err := p.transport.Start(); err != nil {
+		p.errC <- err
 		return nil, ec
 	}
 	log.ZAPSugaredLogger().Debugf("transport started.")
-	return newPod, ec
+
+	if cfg.WebUIPort != 0 {
+		go p.startWebUI(cfg.WebUIPort)
+		log.ZAPSugaredLogger().Infof("start metadata http server at :%d", cfg.WebUIPort)
+	}
+
+	return p, ec
 }
 
 func (p *pod) Stop() {
@@ -170,6 +166,42 @@ func (p *pod) DoLeadershipTransfer(podID uint64, old uint64, transferee uint64) 
 	}
 	if p.meta != nil && p.meta.NodeID() == transferee {
 		p.meta.DoLead(old)
+		return
 	}
-	// TODO : if not meta node
+	if n, exists := p.nodes[transferee]; exists {
+		n.DoLead(old)
+		return
+	}
+}
+
+func (p *pod) startWebUI(port uint64) {
+	http.HandleFunc("/json/metadata", p.metadata)
+	http.Handle("/", http.FileServer(http.Dir("./ui")))
+	err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
+	if err != nil {
+		log.ZAPSugaredLogger().Fatalf("Error raised when serving http, err=%s.", err)
+		panic(err)
+	}
+}
+
+func (p *pod) metadata(rsp http.ResponseWriter, req *http.Request) {
+	rr, err := p.All()
+	if err != nil {
+		http.Error(rsp, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	metadata := Metadata{
+		Config:      p.cfg,
+		RaftRecords: rr,
+	}
+	bs, err := json.Marshal(metadata)
+	if err != nil {
+		http.Error(rsp, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	_, err = fmt.Fprintf(rsp, string(bs))
+	if err != nil {
+		http.Error(rsp, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
 }

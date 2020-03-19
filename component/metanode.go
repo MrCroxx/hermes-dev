@@ -28,7 +28,7 @@ type MetaNode interface {
 	NotifyLeadership(nodeID uint64)
 	All() []RaftRecord
 	DoLead(old uint64)
-	Heartbeat(nodeID uint64)
+	Heartbeat(nodeID uint64, extra []byte)
 	WakeUp()
 	Stop()
 }
@@ -48,6 +48,7 @@ type metaNode struct {
 	advanceC             chan<- struct{}
 	startDataNode        func(zoneID uint64, nodeID uint64, peers map[uint64]uint64)
 	hbTicker             *time.Ticker
+	nWakeUpTick          uint64
 }
 
 type MetaNodeConfig struct {
@@ -76,6 +77,7 @@ func NewMetaNode(cfg MetaNodeConfig) MetaNode {
 		storageDir:           cfg.StorageDir,
 		doLeadershipTransfer: cfg.DoLeadershipTransfer,
 		startDataNode:        cfg.StartDataNode,
+		nWakeUpTick:          3,
 	}
 
 	speers := []uint64{}
@@ -107,7 +109,7 @@ func NewMetaNode(cfg MetaNodeConfig) MetaNode {
 	m.snapshotter = <-re.SnapshotterReadyC
 	m.proposeC = proposeC
 	m.advanceC = re.AdvanceC
-	m.hbTicker = time.NewTicker(time.Second * 30)
+	m.hbTicker = time.NewTicker(time.Second * 3)
 
 	// m.readCommits(re.CommitC, re.ErrorC)
 	go m.readCommits(re.CommitC, re.ErrorC)
@@ -220,11 +222,12 @@ func (m *metaNode) NotifyLeadership(nodeID uint64) {
 	})
 }
 
-func (m *metaNode) Heartbeat(nodeID uint64) {
+func (m *metaNode) Heartbeat(nodeID uint64, extra []byte) {
 	m.propose(MetaCMD{
 		Type:   MetaCMDTYPE_NODE_HEARTBEAT,
 		NodeID: nodeID,
 		Time:   time.Now(),
+		Extra:  extra,
 	})
 }
 
@@ -232,9 +235,7 @@ func (m *metaNode) All() []RaftRecord {
 	return m.rt.All()
 }
 
-func (m *metaNode) DoLead(old uint64) {
-	m.doLead(old)
-}
+func (m *metaNode) DoLead(old uint64) { m.doLead(old) }
 
 func (m *metaNode) Stop() {
 	close(m.proposeC)
@@ -246,35 +247,42 @@ func (m *metaNode) Stop() {
 func (m *metaNode) WakeUp() {
 	log.ZAPSugaredLogger().Debugf("MetaNode.WakeUp is called, waking up dead data nodes in this pod.")
 	m.mux.Lock()
+	defer m.mux.Unlock()
 	for _, rr := range m.rt.Query(func(rr RaftRecord) bool {
 		tdead := time.Now().Add(-time.Second * 30)
-		if rr.ZoneID != m.zoneID && rr.PodID == m.podID && rr.Heartbeat.Before(tdead) {
+		// TODO : is zero ! if create failed !
+		if rr.ZoneID != m.zoneID && rr.PodID == m.podID && rr.Heartbeat.Before(tdead) && !rr.Heartbeat.IsZero() {
 			return true
 		}
 		return false
 	}) {
-		go func() {
-			peerRRs := m.rt.Query(func(prr RaftRecord) bool {
-				if prr.ZoneID == rr.ZoneID {
-					return true
-				}
-				return false
-			})
-			peers := make(map[uint64]uint64)
-			for _, prr := range peerRRs {
-				peers[prr.PodID] = prr.NodeID
-			}
-			m.startDataNode(rr.ZoneID, rr.NodeID, peers)
-		}()
+		go m.wakeUpNode(rr)
 	}
-	m.mux.Unlock()
+}
 
+func (m *metaNode) wakeUpNode(rr RaftRecord) {
+	peerRRs := m.rt.Query(func(prr RaftRecord) bool {
+		if prr.ZoneID == rr.ZoneID {
+			return true
+		}
+		return false
+	})
+	peers := make(map[uint64]uint64)
+	for _, prr := range peerRRs {
+		peers[prr.PodID] = prr.NodeID
+	}
+	log.ZAPSugaredLogger().Infof("wake up : %d", rr.NodeID)
+	m.startDataNode(rr.ZoneID, rr.NodeID, peers)
 }
 
 func (m *metaNode) tickHeartbeat() {
 	for _ = range m.hbTicker.C {
-		m.Heartbeat(m.nodeID)
-		go m.WakeUp()
+		m.Heartbeat(m.nodeID, nil)
+		m.nWakeUpTick--
+		if m.nWakeUpTick == 0 {
+			m.nWakeUpTick = 10
+			go m.WakeUp()
+		}
 	}
 }
 
@@ -343,6 +351,9 @@ func (m *metaNode) handleMetaCMD(cmd MetaCMD) {
 			},
 			func(rr *RaftRecord) {
 				rr.Heartbeat = cmd.Time
+				if rr.ZoneID != m.zoneID {
+					rr.Extra = string(cmd.Extra)
+				}
 			},
 		)
 	}
@@ -391,7 +402,7 @@ func (m *metaNode) readCommits(commitC <-chan *[]byte, errorC <-chan error) {
 				log.ZAPSugaredLogger().Errorf("Error raised when decoding commit, err=%s.", err)
 				panic(err)
 			}
-			log.ZAPSugaredLogger().Infof("apply cmd to MetaNode : %+v", metaCMD)
+			//log.ZAPSugaredLogger().Infof("apply cmd to MetaNode : %+v", metaCMD)
 			m.handleMetaCMD(metaCMD)
 			m.mux.Unlock()
 			m.advanceC <- struct{}{}

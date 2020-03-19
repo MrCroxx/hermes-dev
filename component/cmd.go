@@ -22,6 +22,7 @@ type MetaCMD struct {
 	PodID     uint64
 	OldNodeID uint64
 	Time      time.Time
+	Extra     []byte
 }
 
 type DataCMD struct {

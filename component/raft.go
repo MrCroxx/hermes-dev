@@ -197,7 +197,7 @@ func (re *raftEngine) publishEntries(ents []raftpb.Entry) bool {
 			}
 		}
 
-		log.ZAPSugaredLogger().Debugf("Applied index [%d] -> [%d].", re.appliedIndex, ent.Index)
+		//log.ZAPSugaredLogger().Debugf("Applied index [%d] -> [%d].", re.appliedIndex, ent.Index)
 		re.appliedIndex = ent.Index
 	}
 	return true
@@ -409,6 +409,7 @@ func (re *raftEngine) serveChannels() {
 		case <-ticker.C:
 			re.node.Tick()
 		case rd := <-re.node.Ready():
+			// TODO : why wal is nil ?
 			re.wal.Save(rd.HardState, rd.Entries)
 			if !raft.IsEmptySnap(rd.Snapshot) {
 				log.ZAPSugaredLogger().Debugf("recv not empty snapshot !!!!!!!!!")
@@ -440,6 +441,10 @@ func (re *raftEngine) serveChannels() {
 }
 
 func (re *raftEngine) Process(ctx context.Context, m raftpb.Message) error {
+	// if not ready, return nil
+	if re.node == nil {
+		return nil
+	}
 	return re.node.Step(ctx, m)
 }
 
