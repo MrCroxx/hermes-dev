@@ -7,6 +7,7 @@ import (
 	"github.com/coreos/etcd/raft"
 	"github.com/coreos/etcd/raft/raftpb"
 	"github.com/coreos/etcd/snap"
+	"mrcroxx.io/hermes/component"
 	"sync"
 )
 
@@ -53,21 +54,29 @@ type Transport interface {
 	AddPod(podID uint64, url string) error
 	RemovePod(podID uint64) error
 	AddNode(podID uint64, nodeID uint64) error
-	BindRaft(nodeID uint64, raft Raft) error
-	UnbindRaft(nodeID uint64) error
+	BindRaft(nodeID uint64, raft Raft)
+	UnbindRaft(nodeID uint64)
+	BindDataNode(nodeID uint64, d component.DataNode)
+	UnbindDataNode(nodeID uint64)
+	BindMetaNode(m component.MetaNode)
 	RemoveNode(nodeID uint64) error
 	Raft(nodeID uint64) (Raft, error)
-	// SendSnapshot(m snap.Message)
+	// implement meta node func
+	LookUpLeader(zoneID uint64) uint64
+	// implement data node func
+	AppendData(nodeID uint64, firstIndex uint64, data []string) uint64
 }
 
 type transport struct {
 	podID       uint64
 	snapshotter *snap.Snapshotter
-	mux         sync.RWMutex         // RWMutex to maintain maps below
-	nrafts      map[uint64]Raft      // node id -> raft (for local nodes only)
-	npods       map[uint64]uint64    // node id -> pod id
-	clients     map[uint64]RPCClient // pod id -> rpc client
-	nodeSets    map[uint64][]uint64  // pod id -> node ids
+	mux         sync.RWMutex                  // RWMutex to maintain maps below
+	nrafts      map[uint64]Raft               // node id -> raft (for local nodes only)
+	npods       map[uint64]uint64             // node id -> pod id
+	clients     map[uint64]RPCClient          // pod id -> rpc client
+	nodeSets    map[uint64][]uint64           // pod id -> node ids
+	ndatanodes  map[uint64]component.DataNode // node id -> DataNode
+	metanode    component.MetaNode
 	server      RPCServer
 	url         string
 	done        chan struct{}
@@ -155,24 +164,44 @@ func (t *transport) AddNode(podID uint64, nodeID uint64) (err error) {
 	return
 }
 
-func (t *transport) BindRaft(nodeID uint64, raft Raft) (err error) {
+func (t *transport) BindRaft(nodeID uint64, raft Raft) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
-	if _, exists := t.clients[t.podID]; exists {
-		t.nrafts[nodeID] = raft
-	} else {
-		return errNodeNotExists(nodeID)
-	}
-	return
+	t.nrafts[nodeID] = raft
 }
 
-func (t *transport) UnbindRaft(nodeID uint64) (err error) {
+func (t *transport) UnbindRaft(nodeID uint64) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 	if _, exists := t.nrafts[nodeID]; exists {
 		delete(t.nrafts, nodeID)
 	}
-	return
+}
+
+func (t *transport) BindDataNode(nodeID uint64, d component.DataNode) {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	if d == nil {
+		return
+	}
+	t.ndatanodes[nodeID] = d
+}
+
+func (t *transport) UnbindDataNode(nodeID uint64) {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	if _, exists := t.ndatanodes[nodeID]; exists {
+		delete(t.ndatanodes, nodeID)
+	}
+}
+
+func (t *transport) BindMetaNode(m component.MetaNode) {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	if m == nil {
+		return
+	}
+	t.metanode = m
 }
 
 func (t *transport) RemoveNode(nodeID uint64) (err error) {
@@ -195,4 +224,23 @@ func (t *transport) Raft(nodeID uint64) (Raft, error) {
 		return r, nil
 	}
 	return nil, errRaftNotExists(nodeID)
+}
+
+// implement meta node func
+
+func (t *transport) LookUpLeader(zoneID uint64) uint64 {
+	if t.metanode == nil {
+		return 0
+	}
+	return t.metanode.LookUpLeader(zoneID)
+}
+
+// implement data node func
+
+func (t *transport) AppendData(nodeID uint64, firstIndex uint64, data []string) uint64 {
+	if d, exists := t.ndatanodes[nodeID]; exists {
+		d.Append(firstIndex, data)
+		return d.Ack()
+	}
+	return 0
 }

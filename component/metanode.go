@@ -27,6 +27,7 @@ type MetaNode interface {
 	TransferLeadership(zoneID uint64, nodeID uint64) error
 	NotifyLeadership(nodeID uint64)
 	All() []RaftRecord
+	LookUpLeader(zoneID uint64) uint64
 	DoLead(old uint64)
 	Heartbeat(nodeID uint64, extra []byte)
 	WakeUp()
@@ -102,8 +103,8 @@ func NewMetaNode(cfg MetaNodeConfig) MetaNode {
 		SnapshotCatchUpEntriesN: cfg.SnapshotCatchUpEntriesN,
 		NotifyLeadership:        m.NotifyLeadership,
 		GetSnapshot:             m.getSnapshot,
+		MetaNode:                m,
 	})
-	// cfg.Transport.BindRaft(cfg.NodeID, re.Raft)
 	m.doLead = re.DoLead
 	//m.mux = re.Mux
 	m.snapshotter = <-re.SnapshotterReadyC
@@ -156,7 +157,7 @@ func (m *metaNode) AddRaftZone(zoneID uint64, nodes map[uint64]uint64) error {
 		})
 	}
 	m.propose(MetaCMD{
-		Type:    MetaCMDTYPE_RAFT_ADDZONE,
+		Type:    METACMDTYPE_RAFT_ADDZONE,
 		ZoneID:  zoneID,
 		Records: rs,
 	})
@@ -192,7 +193,7 @@ func (m *metaNode) TransferLeadership(zoneID uint64, nodeID uint64) error {
 	}
 	// propose leadership transfer
 	m.propose(MetaCMD{
-		Type:      MetaCMDTYPE_RAFT_TRANSFER_LEADERATHIP,
+		Type:      METACMDTYPE_RAFT_TRANSFER_LEADERATHIP,
 		ZoneID:    r.ZoneID,
 		NodeID:    r.NodeID,
 		PodID:     r.PodID,
@@ -216,7 +217,7 @@ func (m *metaNode) NotifyLeadership(nodeID uint64) {
 	}
 	r := rs[0]
 	m.propose(MetaCMD{
-		Type:   MetaCMDTYPE_RAFT_NOTIFY_LEADERSHIP,
+		Type:   METACMDTYPE_RAFT_NOTIFY_LEADERSHIP,
 		ZoneID: r.ZoneID,
 		NodeID: r.NodeID,
 	})
@@ -224,11 +225,26 @@ func (m *metaNode) NotifyLeadership(nodeID uint64) {
 
 func (m *metaNode) Heartbeat(nodeID uint64, extra []byte) {
 	m.propose(MetaCMD{
-		Type:   MetaCMDTYPE_NODE_HEARTBEAT,
+		Type:   METACMDTYPE_NODE_HEARTBEAT,
 		NodeID: nodeID,
 		Time:   time.Now(),
 		Extra:  extra,
 	})
+}
+
+func (m *metaNode) LookUpLeader(zoneID uint64) uint64 {
+	m.mux.Lock()
+	defer m.mux.Unlock()
+	rrs := m.rt.Query(func(rr RaftRecord) bool {
+		if rr.ZoneID == zoneID && rr.IsLeader {
+			return true
+		}
+		return false
+	})
+	if len(rrs) == 1 {
+		return rrs[0].NodeID
+	}
+	return 0
 }
 
 func (m *metaNode) All() []RaftRecord {
@@ -290,7 +306,7 @@ func (m *metaNode) tickHeartbeat() {
 
 func (m *metaNode) handleMetaCMD(cmd MetaCMD) {
 	switch cmd.Type {
-	case MetaCMDTYPE_RAFT_ADDZONE:
+	case METACMDTYPE_RAFT_ADDZONE:
 		// only check if zone id exists, other checks in MetaNode.AddRaftZone
 		ins := m.rt.InsertIfNotExist(
 			cmd.Records,
@@ -321,11 +337,11 @@ func (m *metaNode) handleMetaCMD(cmd MetaCMD) {
 		}
 		m.startDataNode(zid, nid, peers)
 
-	case MetaCMDTYPE_RAFT_TRANSFER_LEADERATHIP:
+	case METACMDTYPE_RAFT_TRANSFER_LEADERATHIP:
 		if time.Now().Before(cmd.Time) {
 			m.doLeadershipTransfer(cmd.PodID, cmd.OldNodeID, cmd.NodeID)
 		}
-	case MetaCMDTYPE_RAFT_NOTIFY_LEADERSHIP:
+	case METACMDTYPE_RAFT_NOTIFY_LEADERSHIP:
 		m.rt.Update(
 			func(rr RaftRecord) bool {
 				if rr.ZoneID == cmd.ZoneID {
@@ -341,7 +357,7 @@ func (m *metaNode) handleMetaCMD(cmd MetaCMD) {
 				}
 			},
 		)
-	case MetaCMDTYPE_NODE_HEARTBEAT:
+	case METACMDTYPE_NODE_HEARTBEAT:
 		m.rt.Update(
 			func(rr RaftRecord) bool {
 				if rr.NodeID == cmd.NodeID {

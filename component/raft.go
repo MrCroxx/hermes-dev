@@ -59,6 +59,8 @@ type RaftEngineConfig struct {
 	SnapshotCatchUpEntriesN uint64
 	GetSnapshot             func() ([]byte, error)
 	NotifyLeadership        func(nodeID uint64)
+	MetaNode                MetaNode
+	DataNode                DataNode
 }
 
 type RaftEngine struct {
@@ -93,10 +95,9 @@ func NewRaftEngine(cfg RaftEngineConfig) RaftEngine {
 		// rest of structure populated after WAL replay
 	}
 
-	if err := re.transport.BindRaft(re.nodeID, re); err != nil {
-		log.ZAPSugaredLogger().Fatalf("Error raised when binding raft, err=%s.", err)
-		panic(err)
-	}
+	re.transport.BindRaft(re.nodeID, re)
+	re.transport.BindDataNode(re.nodeID, cfg.DataNode)
+	re.transport.BindMetaNode(cfg.MetaNode)
 
 	go re.startRaft()
 	return RaftEngine{

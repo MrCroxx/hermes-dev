@@ -32,7 +32,7 @@ func (c *rpcClient) Send(m raftpb.Message) error {
 	}
 	// encode message
 	buf, err := tcpx.PackWithMarshaller(tcpx.Message{
-		MessageID: RaftHandler,
+		MessageID: RaftID,
 		Header:    nil,
 		Body:      m,
 	}, &pkg.GOBMarshaller{})

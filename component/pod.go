@@ -9,6 +9,7 @@ import (
 	"mrcroxx.io/hermes/transport"
 	"net/http"
 	"path"
+	"sync"
 )
 
 var (
@@ -32,17 +33,19 @@ type Pod interface {
 
 // pod
 type pod struct {
-	podID                   uint64              // pod id
-	pods                    map[uint64]string   // pod id -> url
-	storageDir              string              // path to storage
-	transport               transport.Transport // transport engine
-	errC                    chan<- error        // send pod errors
-	meta                    MetaNode            // mate node
-	nodes                   map[uint64]DataNode // node id -> data node
-	triggerSnapshotEntriesN uint64              // entries count to trigger raft snapshot
-	snapshotCatchUpEntriesN uint64              // entries count for slow follower catch up before compacting
-	metaZoneOffset          uint64              // zone id and node id offset for meta zone
-	cfg                     config.HermesConfig // hermes config for pod constructing
+	podID                   uint64                   // pod id
+	pods                    map[uint64]string        // pod id -> url
+	storageDir              string                   // path to storage
+	transport               transport.Transport      // transport engine
+	errC                    chan<- error             // send pod errors
+	meta                    MetaNode                 // mate node
+	nodes                   map[uint64]DataNode      // node id -> data node
+	triggerSnapshotEntriesN uint64                   // entries count to trigger raft snapshot
+	snapshotCatchUpEntriesN uint64                   // entries count for slow follower catch up before compacting
+	metaZoneOffset          uint64                   // zone id and node id offset for meta zone
+	cfg                     config.HermesConfig      // hermes config for pod constructing
+	ackCs                   map[uint64]<-chan uint64 // node id -> ack signal channel
+	mux                     sync.Mutex
 }
 
 func NewPod(
@@ -120,7 +123,9 @@ func (p *pod) StartMetaNode() {
 }
 
 func (p *pod) StartDataNode(zoneID uint64, nodeID uint64, peers map[uint64]uint64) {
-	d := NewDataNode(DataNodeConfig{
+	p.mux.Lock()
+	defer p.mux.Unlock()
+	d:= NewDataNode(DataNodeConfig{
 		ZoneID:                  zoneID,
 		NodeID:                  nodeID,
 		Peers:                   peers,

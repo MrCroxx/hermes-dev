@@ -2,20 +2,23 @@ package component
 
 import "time"
 
-type MetaCMDTYPE int
-type DataCMDTYPE int
+type METACMDTYPE int
+type DATACMDTYPE int
+type HERMESCMDTYPE int
 
 const (
-	MetaCMDTYPE_RAFT_ADDZONE MetaCMDTYPE = iota
-	MetaCMDTYPE_RAFT_NOTIFY_LEADERSHIP
-	MetaCMDTYPE_RAFT_TRANSFER_LEADERATHIP
-	MetaCMDTYPE_NODE_HEARTBEAT
+	METACMDTYPE_RAFT_ADDZONE METACMDTYPE = iota
+	METACMDTYPE_RAFT_NOTIFY_LEADERSHIP
+	METACMDTYPE_RAFT_TRANSFER_LEADERATHIP
+	METACMDTYPE_NODE_HEARTBEAT
 
-	DataCMDTYPE_APPEND DataCMDTYPE = iota
+	DATACMDTYPE_APPEND DATACMDTYPE = iota
+
+	HERMESCMDTYPE_APPEND HERMESCMDTYPE = iota
 )
 
 type MetaCMD struct {
-	Type      MetaCMDTYPE
+	Type      METACMDTYPE
 	Records   []RaftRecord
 	ZoneID    uint64
 	NodeID    uint64
@@ -26,6 +29,21 @@ type MetaCMD struct {
 }
 
 type DataCMD struct {
-	Type DataCMDTYPE
-	Data []string
+	Type       DATACMDTYPE
+	FirstIndex uint64
+	Data       []string
+}
+
+type HermesCMD struct {
+	Type       HERMESCMDTYPE
+	ZoneID     uint64
+	NodeID     uint64
+	FirstIndex uint64
+	Data       []string
+}
+
+type HermesRSP struct {
+	Err        error  // error
+	NodeID     uint64 // leader id now for client to redirect
+	FirstIndex uint64 // first index applied by data node
 }

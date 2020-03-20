@@ -13,6 +13,8 @@ import (
 )
 
 type DataNode interface {
+	Append(firstIndex uint64, vs []string)
+	Ack() uint64
 	Metadata() []byte
 	DoLead(old uint64)
 	Stop()
@@ -40,6 +42,7 @@ type dataNode struct {
 	heartbeat   func(nodeID uint64, extra []byte)
 	peers       map[uint64]uint64
 	transport   transport.Transport
+	ackC        chan uint64
 }
 
 type DataNodeConfig struct {
@@ -70,6 +73,7 @@ func NewDataNode(cfg DataNodeConfig) DataNode {
 		heartbeat:   cfg.Heartbeat,
 		peers:       cfg.Peers,
 		transport:   cfg.Transport,
+		ackC:        make(chan uint64),
 	}
 
 	speers := []uint64{}
@@ -93,6 +97,7 @@ func NewDataNode(cfg DataNodeConfig) DataNode {
 		SnapshotCatchUpEntriesN: cfg.SnapshotCatchUpEntriesN,
 		NotifyLeadership:        cfg.NotifyLeaderShip,
 		GetSnapshot:             d.getSnapshot,
+		DataNode:                d,
 	})
 
 	d.doLead = re.DoLead
@@ -133,10 +138,25 @@ func (d *dataNode) Metadata() []byte {
 	return s
 }
 
+func (d *dataNode) Append(firstIndex uint64, vs []string) {
+	d.propose(DataCMD{
+		Type:       DATACMDTYPE_APPEND,
+		Data:       vs,
+		FirstIndex: firstIndex,
+	})
+}
+
+func (d *dataNode) Ack() uint64 {
+	return <-d.ackC
+}
+
+// internal functions
+
 func (d *dataNode) handleDataCMD(cmd DataCMD) {
 	switch cmd.Type {
-	case DataCMDTYPE_APPEND:
-
+	case DATACMDTYPE_APPEND:
+		d.ds.Append(cmd.Data)
+		d.ackC <- cmd.FirstIndex
 	}
 }
 
