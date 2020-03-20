@@ -111,7 +111,6 @@ func (s *rpcServer) handleHermes(c *tcpx.Context) {
 	_, err = c.Conn.Write(buf)
 
 	//c.ProtoBuf()
-	err = c.Reply()
 	//err = c.ReplyWithMarshaller(&pkg.GOBMarshaller{}, HermesRSPID, rsp)
 	if err != nil {
 		log.ZAPSugaredLogger().Errorf("Error raised when replying client, err=%s.", err)
