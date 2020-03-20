@@ -6,6 +6,7 @@ import (
 	"mrcroxx.io/hermes/component"
 	"mrcroxx.io/hermes/config"
 	"mrcroxx.io/hermes/log"
+	"mrcroxx.io/hermes/unit"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,29 +41,26 @@ func main() {
 	log.ZAPSugaredLogger().Debugf("hermes config : %+v", cfg)
 
 	// Initialize Pod
-	pod, podErrC := component.NewPod(*cfg)
-	defer pod.Stop()
-	pod.ConnectCluster()
-
+	ec := make(chan error)
 	go func() {
-		err := <-podErrC
+		err := <-ec
 		log.ZAPSugaredLogger().Fatalf("Pod err : %s.", err)
 		panic(err)
 	}()
-
-	pod.StartMetaNode()
+	pod := component.NewPod(*cfg, ec)
+	defer pod.Stop()
 
 	startCMD(pod)
 
 }
 
-func startCMD(pod component.Pod) {
+func startCMD(pod unit.Pod) {
 	var cmd string
 	for {
-		log.ZAPSugaredLogger().Debugf("Please input your cmd : ")
+		log.ZAPSugaredLogger().Infof("Please input your cmd : ")
 		fmt.Scan(&cmd)
 		cmds := strings.Split(cmd, ":")
-		log.ZAPSugaredLogger().Debugf("%+v", cmds)
+		log.ZAPSugaredLogger().Infof("%+v", cmds)
 		op := cmds[0]
 		switch op {
 		case "all":
@@ -90,7 +88,7 @@ func startCMD(pod component.Pod) {
 				nodes[uint64(nid)] = uint64(pid)
 			}
 			if err := pod.AddRaftZone(uint64(zoneID), nodes); err == nil {
-				log.ZAPSugaredLogger().Debugf("ok")
+				log.ZAPSugaredLogger().Infof("ok")
 			} else {
 				log.ZAPSugaredLogger().Errorf("%s", err)
 			}
@@ -98,12 +96,16 @@ func startCMD(pod component.Pod) {
 			zoneID, _ := strconv.Atoi(cmds[1])
 			nodeID, _ := strconv.Atoi(cmds[2])
 			if err := pod.TransferLeadership(uint64(zoneID), uint64(nodeID)); err == nil {
-				log.ZAPSugaredLogger().Debugf("ok")
+				log.ZAPSugaredLogger().Infof("ok")
 			} else {
 				log.ZAPSugaredLogger().Errorf("%s", err)
 			}
+		case "wk":
+			nodeID, _ := strconv.Atoi(cmds[1])
+			pod.WakeUpNode(uint64(nodeID))
+			log.ZAPSugaredLogger().Infof("ok")
 		default:
-			log.ZAPSugaredLogger().Debugf("none")
+			log.ZAPSugaredLogger().Infof("none")
 		}
 	}
 }

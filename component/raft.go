@@ -8,10 +8,12 @@ import (
 	"github.com/coreos/etcd/wal"
 	"github.com/coreos/etcd/wal/walpb"
 	"math/rand"
+	cmd2 "mrcroxx.io/hermes/cmd"
 	"mrcroxx.io/hermes/config"
 	"mrcroxx.io/hermes/log"
 	"mrcroxx.io/hermes/pkg"
 	"mrcroxx.io/hermes/transport"
+	"mrcroxx.io/hermes/unit"
 	"os"
 	"path"
 	"time"
@@ -59,8 +61,8 @@ type RaftEngineConfig struct {
 	SnapshotCatchUpEntriesN uint64
 	GetSnapshot             func() ([]byte, error)
 	NotifyLeadership        func(nodeID uint64)
-	MetaNode                MetaNode
-	DataNode                DataNode
+	MetaNode                unit.MetaNode
+	DataNode                unit.DataNode
 }
 
 type RaftEngine struct {
@@ -470,7 +472,7 @@ func (re *raftEngine) LogEntries() {
 	for _, ent := range ents {
 		log.ZAPSugaredLogger().Debugf("entry term[%d] index[%d] type[%d].", ent.Term, ent.Index, ent.Type)
 		if ent.Type == raftpb.EntryNormal {
-			var cmd MetaCMD
+			var cmd cmd2.MetaCMD
 			err := pkg.Decode(ent.Data, &cmd)
 			if err != nil {
 				log.ZAPSugaredLogger().Errorf("Error raised when decoding cmd : err=%s.", err)

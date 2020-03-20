@@ -7,7 +7,7 @@ import (
 	"github.com/coreos/etcd/raft"
 	"github.com/coreos/etcd/raft/raftpb"
 	"github.com/coreos/etcd/snap"
-	"mrcroxx.io/hermes/component"
+	"mrcroxx.io/hermes/unit"
 	"sync"
 )
 
@@ -56,9 +56,9 @@ type Transport interface {
 	AddNode(podID uint64, nodeID uint64) error
 	BindRaft(nodeID uint64, raft Raft)
 	UnbindRaft(nodeID uint64)
-	BindDataNode(nodeID uint64, d component.DataNode)
+	BindDataNode(nodeID uint64, d unit.DataNode)
 	UnbindDataNode(nodeID uint64)
-	BindMetaNode(m component.MetaNode)
+	BindMetaNode(m unit.MetaNode)
 	RemoveNode(nodeID uint64) error
 	Raft(nodeID uint64) (Raft, error)
 	// implement meta node func
@@ -70,13 +70,13 @@ type Transport interface {
 type transport struct {
 	podID       uint64
 	snapshotter *snap.Snapshotter
-	mux         sync.RWMutex                  // RWMutex to maintain maps below
-	nrafts      map[uint64]Raft               // node id -> raft (for local nodes only)
-	npods       map[uint64]uint64             // node id -> pod id
-	clients     map[uint64]RPCClient          // pod id -> rpc client
-	nodeSets    map[uint64][]uint64           // pod id -> node ids
-	ndatanodes  map[uint64]component.DataNode // node id -> DataNode
-	metanode    component.MetaNode
+	mux         sync.RWMutex             // RWMutex to maintain maps below
+	nrafts      map[uint64]Raft          // node id -> raft (for local nodes only)
+	npods       map[uint64]uint64        // node id -> pod id
+	clients     map[uint64]RPCClient     // pod id -> rpc client
+	nodeSets    map[uint64][]uint64      // pod id -> node ids
+	ndatanodes  map[uint64]unit.DataNode // node id -> DataNode
+	metanode    unit.MetaNode
 	server      RPCServer
 	url         string
 	done        chan struct{}
@@ -84,13 +84,14 @@ type transport struct {
 
 func NewTransport(podID uint64, url string) Transport {
 	return &transport{
-		podID:    podID,
-		url:      url,
-		nrafts:   make(map[uint64]Raft),
-		nodeSets: make(map[uint64][]uint64),
-		npods:    make(map[uint64]uint64),
-		clients:  make(map[uint64]RPCClient),
-		done:     make(chan struct{}),
+		podID:      podID,
+		url:        url,
+		nrafts:     make(map[uint64]Raft),
+		nodeSets:   make(map[uint64][]uint64),
+		npods:      make(map[uint64]uint64),
+		clients:    make(map[uint64]RPCClient),
+		done:       make(chan struct{}),
+		ndatanodes: make(map[uint64]unit.DataNode),
 	}
 }
 
@@ -178,7 +179,7 @@ func (t *transport) UnbindRaft(nodeID uint64) {
 	}
 }
 
-func (t *transport) BindDataNode(nodeID uint64, d component.DataNode) {
+func (t *transport) BindDataNode(nodeID uint64, d unit.DataNode) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 	if d == nil {
@@ -195,7 +196,7 @@ func (t *transport) UnbindDataNode(nodeID uint64) {
 	}
 }
 
-func (t *transport) BindMetaNode(m component.MetaNode) {
+func (t *transport) BindMetaNode(m unit.MetaNode) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 	if m == nil {
@@ -240,7 +241,7 @@ func (t *transport) LookUpLeader(zoneID uint64) uint64 {
 func (t *transport) AppendData(nodeID uint64, firstIndex uint64, data []string) uint64 {
 	if d, exists := t.ndatanodes[nodeID]; exists {
 		d.Append(firstIndex, data)
-		return d.Ack()
+		return d.ACK()
 	}
 	return 0
 }

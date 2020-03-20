@@ -4,21 +4,16 @@ import (
 	"encoding/json"
 	"github.com/coreos/etcd/raft/raftpb"
 	"github.com/coreos/etcd/snap"
+	"mrcroxx.io/hermes/cmd"
 	"mrcroxx.io/hermes/log"
 	"mrcroxx.io/hermes/pkg"
+	"mrcroxx.io/hermes/store"
 	"mrcroxx.io/hermes/transport"
+	"mrcroxx.io/hermes/unit"
 	"path"
 	"sync"
 	"time"
 )
-
-type DataNode interface {
-	Append(firstIndex uint64, vs []string)
-	Ack() uint64
-	Metadata() []byte
-	DoLead(old uint64)
-	Stop()
-}
 
 type DataNodeMetadata struct {
 	DeletedIndex   uint64 `json:"DeletedIndex"`
@@ -28,7 +23,7 @@ type DataNodeMetadata struct {
 }
 
 type dataNode struct {
-	ds          DataStore
+	ds          store.DataStore
 	zoneID      uint64
 	nodeID      uint64
 	storageDir  string
@@ -58,13 +53,13 @@ type DataNodeConfig struct {
 	Heartbeat               func(nodeID uint64, extra []byte)
 }
 
-func NewDataNode(cfg DataNodeConfig) DataNode {
+func NewDataNode(cfg DataNodeConfig) unit.DataNode {
 
 	proposeC := make(chan []byte)
 	confchangeC := make(chan raftpb.ConfChange)
 
 	d := &dataNode{
-		ds:          NewDataStore(path.Join(cfg.StorageDir, "block")),
+		ds:          store.NewDataStore(path.Join(cfg.StorageDir, "block")),
 		zoneID:      cfg.ZoneID,
 		nodeID:      cfg.NodeID,
 		storageDir:  cfg.StorageDir,
@@ -80,7 +75,7 @@ func NewDataNode(cfg DataNodeConfig) DataNode {
 	for pid, nid := range cfg.Peers {
 		err := cfg.Transport.AddNode(pid, nid)
 		if err != nil {
-			log.ZAPSugaredLogger().Errorf("Error raised when add meta node peers to transport, err=%s.", err)
+			log.ZAPSugaredLogger().Errorf("Error raised when add metaNode node peers to transport, err=%s.", err)
 		}
 		speers = append(speers, nid)
 	}
@@ -139,28 +134,31 @@ func (d *dataNode) Metadata() []byte {
 }
 
 func (d *dataNode) Append(firstIndex uint64, vs []string) {
-	d.propose(DataCMD{
-		Type:       DATACMDTYPE_APPEND,
+	d.propose(cmd.DataCMD{
+		Type:       cmd.DATACMDTYPE_APPEND,
 		Data:       vs,
 		FirstIndex: firstIndex,
+		ACKNodeID:  d.nodeID,
 	})
 }
 
-func (d *dataNode) Ack() uint64 {
+func (d *dataNode) ACK() uint64 {
 	return <-d.ackC
 }
 
 // internal functions
 
-func (d *dataNode) handleDataCMD(cmd DataCMD) {
-	switch cmd.Type {
-	case DATACMDTYPE_APPEND:
-		d.ds.Append(cmd.Data)
-		d.ackC <- cmd.FirstIndex
+func (d *dataNode) handleDataCMD(dataCMD cmd.DataCMD) {
+	switch dataCMD.Type {
+	case cmd.DATACMDTYPE_APPEND:
+		d.ds.Append(dataCMD.Data)
+		if dataCMD.ACKNodeID == d.nodeID {
+			d.ackC <- dataCMD.FirstIndex
+		}
 	}
 }
 
-func (d *dataNode) propose(cmd DataCMD) {
+func (d *dataNode) propose(cmd cmd.DataCMD) {
 	data, _ := pkg.Encode(cmd)
 	d.proposeC <- data
 }
@@ -195,7 +193,7 @@ func (d *dataNode) readCommits(commitC <-chan *[]byte, errorC <-chan error) {
 			log.ZAPSugaredLogger().Infof("Finish loading snapshot.")
 		default:
 			d.mux.Lock()
-			var dataCMD DataCMD
+			var dataCMD cmd.DataCMD
 			err := pkg.Decode(*commit, &dataCMD)
 			if err != nil {
 				log.ZAPSugaredLogger().Errorf("Error raised when decoding commit, err=%s.", err)

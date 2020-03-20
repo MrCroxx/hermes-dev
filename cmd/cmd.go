@@ -1,10 +1,17 @@
-package component
+package cmd
 
-import "time"
+import (
+	"mrcroxx.io/hermes/store"
+	"time"
+)
 
 type METACMDTYPE int
 type DATACMDTYPE int
 type HERMESCMDTYPE int
+
+var (
+	HEIHEIHEI = "asd"
+)
 
 const (
 	METACMDTYPE_RAFT_ADDZONE METACMDTYPE = iota
@@ -19,7 +26,7 @@ const (
 
 type MetaCMD struct {
 	Type      METACMDTYPE
-	Records   []RaftRecord
+	Records   []store.RaftRecord
 	ZoneID    uint64
 	NodeID    uint64
 	PodID     uint64
@@ -30,6 +37,7 @@ type MetaCMD struct {
 
 type DataCMD struct {
 	Type       DATACMDTYPE
+	ACKNodeID  uint64
 	FirstIndex uint64
 	Data       []string
 }

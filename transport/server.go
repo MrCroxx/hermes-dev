@@ -5,7 +5,7 @@ import (
 	"errors"
 	"github.com/coreos/etcd/raft/raftpb"
 	"github.com/fwhezfwhez/tcpx"
-	"mrcroxx.io/hermes/component"
+	"mrcroxx.io/hermes/cmd"
 	"mrcroxx.io/hermes/log"
 	"mrcroxx.io/hermes/pkg"
 	"sync"
@@ -78,8 +78,8 @@ func (s *rpcServer) handleRaft(c *tcpx.Context) {
 }
 
 func (s *rpcServer) handleHermes(c *tcpx.Context) {
-	var m component.HermesCMD
-	var rsp component.HermesRSP
+	var m cmd.HermesCMD
+	var rsp cmd.HermesRSP
 
 	_, err := c.Bind(&m)
 	if err != nil {
@@ -92,7 +92,6 @@ func (s *rpcServer) handleHermes(c *tcpx.Context) {
 	if m.NodeID == 0 {
 		m.NodeID = rsp.NodeID
 	}
-	// TODO : handle data with data node
 	rsp.FirstIndex = s.transport.AppendData(m.NodeID, m.FirstIndex, m.Data)
 	if rsp.FirstIndex == 0 {
 		rsp.Err = errNodeIDNotExist

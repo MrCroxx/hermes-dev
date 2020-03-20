@@ -6,29 +6,21 @@ import (
 	"fmt"
 	"mrcroxx.io/hermes/config"
 	"mrcroxx.io/hermes/log"
+	"mrcroxx.io/hermes/store"
 	"mrcroxx.io/hermes/transport"
+	"mrcroxx.io/hermes/unit"
 	"net/http"
 	"path"
 	"sync"
 )
 
 var (
-	errMetaNodeNotExist = errors.New("meta node in this pod not exist")
+	errMetaNodeNotExist = errors.New("metaNode node in this pod not exist")
 )
 
 type Metadata struct {
 	Config      config.HermesConfig
-	RaftRecords []RaftRecord
-}
-
-type Pod interface {
-	Stop()
-	ConnectCluster()
-	StartMetaNode()
-	AddRaftZone(zoneID uint64, nodes map[uint64]uint64) error
-	TransferLeadership(zoneID uint64, nodeID uint64) error
-
-	All() ([]RaftRecord, error)
+	RaftRecords []store.RaftRecord
 }
 
 // pod
@@ -38,11 +30,11 @@ type pod struct {
 	storageDir              string                   // path to storage
 	transport               transport.Transport      // transport engine
 	errC                    chan<- error             // send pod errors
-	meta                    MetaNode                 // mate node
-	nodes                   map[uint64]DataNode      // node id -> data node
+	metaNode                unit.MetaNode            // mate node
+	nodes                   map[uint64]unit.DataNode // node id -> data node
 	triggerSnapshotEntriesN uint64                   // entries count to trigger raft snapshot
 	snapshotCatchUpEntriesN uint64                   // entries count for slow follower catch up before compacting
-	metaZoneOffset          uint64                   // zone id and node id offset for meta zone
+	metaZoneOffset          uint64                   // zone id and node id offset for metaNode zone
 	cfg                     config.HermesConfig      // hermes config for pod constructing
 	ackCs                   map[uint64]<-chan uint64 // node id -> ack signal channel
 	mux                     sync.Mutex
@@ -50,10 +42,10 @@ type pod struct {
 
 func NewPod(
 	cfg config.HermesConfig,
+	errC chan<- error,
 // cmdC <-chan command.PodCMD,
-) (Pod, <-chan error) {
+) unit.Pod {
 	// init pod struct
-	ec := make(chan error)
 	p := &pod{
 		cfg:                     cfg,
 		podID:                   cfg.PodID,
@@ -62,8 +54,8 @@ func NewPod(
 		triggerSnapshotEntriesN: cfg.TriggerSnapshotEntriesN,
 		snapshotCatchUpEntriesN: cfg.SnapshotCatchUpEntriesN,
 		metaZoneOffset:          cfg.MetaZoneOffset,
-		errC:                    ec,
-		nodes:                   make(map[uint64]DataNode),
+		errC:                    errC,
+		nodes:                   make(map[uint64]unit.DataNode),
 		transport:               transport.NewTransport(cfg.PodID, cfg.Pods[cfg.PodID]),
 	}
 
@@ -72,7 +64,7 @@ func NewPod(
 	log.ZAPSugaredLogger().Debugf("starting transport ...")
 	if err := p.transport.Start(); err != nil {
 		p.errC <- err
-		return nil, ec
+		return nil
 	}
 	log.ZAPSugaredLogger().Debugf("transport started.")
 
@@ -81,14 +73,45 @@ func NewPod(
 		log.ZAPSugaredLogger().Infof("start metadata http server at :%d", cfg.WebUIPort)
 	}
 
-	return p, ec
+	p.connectCluster()
+	p.startMetaNode()
+
+	return p
 }
 
 func (p *pod) Stop() {
 	p.transport.Stop()
 }
 
-func (p *pod) ConnectCluster() {
+func (p *pod) All() ([]store.RaftRecord, error) {
+	if p.metaNode == nil {
+		return nil, errMetaNodeNotExist
+	}
+	return p.metaNode.All(), nil
+}
+
+func (p *pod) AddRaftZone(zoneID uint64, nodes map[uint64]uint64) error {
+	if p.metaNode == nil {
+		return errMetaNodeNotExist
+	}
+	return p.metaNode.AddRaftZone(zoneID, nodes)
+}
+
+func (p *pod) TransferLeadership(zoneID uint64, nodeID uint64) error {
+	if p.metaNode == nil {
+		return errMetaNodeNotExist
+	}
+	return p.metaNode.TransferLeadership(zoneID, nodeID)
+}
+
+func (p *pod) WakeUpNode(nodeID uint64) {
+	if p.metaNode == nil {
+		return
+	}
+	p.metaNode.WakeUpNode(nodeID)
+}
+
+func (p *pod) connectCluster() {
 	for podID, url := range p.pods {
 		if err := p.transport.AddPod(podID, url); err != nil {
 			p.errC <- err
@@ -96,14 +119,14 @@ func (p *pod) ConnectCluster() {
 	}
 }
 
-func (p *pod) StartMetaNode() {
+func (p *pod) startMetaNode() {
 	nodeID := p.podID + p.metaZoneOffset
 	peers := make(map[uint64]uint64)
 	for podID, _ := range p.pods {
 		peers[podID] = podID + p.metaZoneOffset
 	}
 
-	p.meta = NewMetaNode(MetaNodeConfig{
+	p.metaNode = NewMetaNode(MetaNodeConfig{
 		ZoneID:                  p.metaZoneOffset,
 		NodeID:                  nodeID,
 		PodID:                   p.podID,
@@ -113,19 +136,19 @@ func (p *pod) StartMetaNode() {
 		TriggerSnapshotEntriesN: p.triggerSnapshotEntriesN,
 		SnapshotCatchUpEntriesN: p.snapshotCatchUpEntriesN,
 		Transport:               p.transport,
-		DoLeadershipTransfer:    p.DoLeadershipTransfer,
-		StartDataNode:           p.StartDataNode,
+		DoLeadershipTransfer:    p.doLeadershipTransfer,
+		StartDataNode:           p.startDataNode,
 	})
-	if p.meta == nil {
-		log.ZAPSugaredLogger().Fatalf("Failed to create meta node.")
+	if p.metaNode == nil {
+		log.ZAPSugaredLogger().Fatalf("Failed to create metaNode node.")
 		panic(nil)
 	}
 }
 
-func (p *pod) StartDataNode(zoneID uint64, nodeID uint64, peers map[uint64]uint64) {
+func (p *pod) startDataNode(zoneID uint64, nodeID uint64, peers map[uint64]uint64) {
 	p.mux.Lock()
 	defer p.mux.Unlock()
-	d:= NewDataNode(DataNodeConfig{
+	d := NewDataNode(DataNodeConfig{
 		ZoneID:                  zoneID,
 		NodeID:                  nodeID,
 		Peers:                   peers,
@@ -134,8 +157,8 @@ func (p *pod) StartDataNode(zoneID uint64, nodeID uint64, peers map[uint64]uint6
 		TriggerSnapshotEntriesN: p.triggerSnapshotEntriesN,
 		SnapshotCatchUpEntriesN: p.snapshotCatchUpEntriesN,
 		Transport:               p.transport,
-		NotifyLeaderShip:        p.meta.NotifyLeadership,
-		Heartbeat:               p.meta.Heartbeat,
+		NotifyLeaderShip:        p.metaNode.NotifyLeadership,
+		Heartbeat:               p.metaNode.Heartbeat,
 	})
 	if d == nil {
 		log.ZAPSugaredLogger().Error("Error raised when add data node")
@@ -143,34 +166,13 @@ func (p *pod) StartDataNode(zoneID uint64, nodeID uint64, peers map[uint64]uint6
 	p.nodes[nodeID] = d
 }
 
-func (p *pod) All() ([]RaftRecord, error) {
-	if p.meta == nil {
-		return nil, errMetaNodeNotExist
-	}
-	return p.meta.All(), nil
-}
-
-func (p *pod) AddRaftZone(zoneID uint64, nodes map[uint64]uint64) error {
-	if p.meta == nil {
-		return errMetaNodeNotExist
-	}
-	return p.meta.AddRaftZone(zoneID, nodes)
-}
-
-func (p *pod) TransferLeadership(zoneID uint64, nodeID uint64) error {
-	if p.meta == nil {
-		return errMetaNodeNotExist
-	}
-	return p.meta.TransferLeadership(zoneID, nodeID)
-}
-
-func (p *pod) DoLeadershipTransfer(podID uint64, old uint64, transferee uint64) {
+func (p *pod) doLeadershipTransfer(podID uint64, old uint64, transferee uint64) {
 	log.ZAPSugaredLogger().Debugf("do leadership transfer : pod %d old %d transferee %d.", podID, old, transferee)
 	if podID != p.podID {
 		return
 	}
-	if p.meta != nil && p.meta.NodeID() == transferee {
-		p.meta.DoLead(old)
+	if p.metaNode != nil && p.metaNode.NodeID() == transferee {
+		p.metaNode.DoLead(old)
 		return
 	}
 	if n, exists := p.nodes[transferee]; exists {
