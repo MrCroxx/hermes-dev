@@ -17,7 +17,13 @@ func Write(p string, data []byte) error {
 }
 
 func CleanTmp(p string) {
+	if !Exist(p) {
+		return
+	}
 	if err := filepath.Walk(p, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
 		if !info.IsDir() && filepath.Ext(path) == ".tmp" {
 			log.ZAPSugaredLogger().Debugf("Remove .tmp file : %s", path)
 			return os.Remove(path)
