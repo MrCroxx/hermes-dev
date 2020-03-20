@@ -18,7 +18,7 @@ const (
 )
 
 var (
-	errNodeIDNotExist = errors.New("NodeID not exists, if client is not sure about node id, just set it 0")
+	errRedirect = errors.New("NodeID not exists in this pod, redirect")
 )
 
 type rpcServer struct {
@@ -40,6 +40,7 @@ func (s *rpcServer) Init() error {
 	s.server.OnConnect = s.onConnect
 	s.server.OnClose = s.onClose
 	s.server.AddHandler(RaftID, s.handleRaft)
+	s.server.AddHandler(HermesCMDID, s.handleHermes)
 	go func() {
 		err := s.server.ListenAndServe("tcp", s.url)
 		if err != nil {
@@ -85,16 +86,35 @@ func (s *rpcServer) handleHermes(c *tcpx.Context) {
 	if err != nil {
 		log.ZAPSugaredLogger().Errorf("Error raised when binding message, err=%s.", err)
 		rsp.Err = err
-		c.Reply(HermesRSPID, rsp)
+		err = c.ReplyWithMarshaller(&pkg.GOBMarshaller{}, HermesRSPID, rsp)
+		if err != nil {
+			log.ZAPSugaredLogger().Errorf("Error raised when replying client, err=%s.", err)
+		}
 		return
 	}
-	rsp.NodeID = s.transport.LookUpLeader(m.ZoneID)
+
+	log.ZAPSugaredLogger().Debugf("%+v", m)
+	rsp.NodeID, rsp.PodID = s.transport.LookUpLeader(m.ZoneID)
 	if m.NodeID == 0 {
 		m.NodeID = rsp.NodeID
 	}
 	rsp.FirstIndex = s.transport.AppendData(m.NodeID, m.FirstIndex, m.Data)
 	if rsp.FirstIndex == 0 {
-		rsp.Err = errNodeIDNotExist
+		rsp.Err = errRedirect
 	}
-	c.Reply(HermesRSPID, rsp)
+	log.ZAPSugaredLogger().Debugf("%+v", rsp)
+	buf, err := tcpx.PackWithMarshaller(tcpx.Message{
+		MessageID: RaftID,
+		Header:    nil,
+		Body:      rsp,
+	}, &pkg.GOBMarshaller{})
+	_, err = c.Conn.Write(buf)
+
+	//c.ProtoBuf()
+	err = c.Reply()
+	//err = c.ReplyWithMarshaller(&pkg.GOBMarshaller{}, HermesRSPID, rsp)
+	if err != nil {
+		log.ZAPSugaredLogger().Errorf("Error raised when replying client, err=%s.", err)
+	}
+	log.ZAPSugaredLogger().Debugf("finish response")
 }

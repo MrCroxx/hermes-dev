@@ -53,5 +53,6 @@ type HermesCMD struct {
 type HermesRSP struct {
 	Err        error  // error
 	NodeID     uint64 // leader id now for client to redirect
+	PodID      uint64 // pod id for leader node now
 	FirstIndex uint64 // first index applied by data node
 }

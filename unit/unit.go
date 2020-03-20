@@ -18,7 +18,7 @@ type MetaNode interface {
 	TransferLeadership(zoneID uint64, nodeID uint64) error
 	NotifyLeadership(nodeID uint64)
 	All() []store.RaftRecord
-	LookUpLeader(zoneID uint64) uint64
+	LookUpLeader(zoneID uint64) (nodeID uint64, podID uint64)
 	DoLead(old uint64)
 	Heartbeat(nodeID uint64, extra []byte)
 	WakeUp()

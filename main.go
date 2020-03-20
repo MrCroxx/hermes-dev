@@ -6,6 +6,7 @@ import (
 	"mrcroxx.io/hermes/component"
 	"mrcroxx.io/hermes/config"
 	"mrcroxx.io/hermes/log"
+	"mrcroxx.io/hermes/pkg"
 	"mrcroxx.io/hermes/unit"
 	"sort"
 	"strconv"
@@ -39,6 +40,9 @@ func main() {
 		log.ZAPSugaredLogger().Errorf("Error raised when parsing hermes config, err=%s.", err)
 	}
 	log.ZAPSugaredLogger().Debugf("hermes config : %+v", cfg)
+
+	// clean .tmp file
+	pkg.CleanTmp(cfg.StorageDir)
 
 	// Initialize Pod
 	ec := make(chan error)

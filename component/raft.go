@@ -412,7 +412,7 @@ func (re *raftEngine) serveChannels() {
 		case <-ticker.C:
 			re.node.Tick()
 		case rd := <-re.node.Ready():
-			// TODO : why wal is nil ?
+			// log.ZAPSugaredLogger().Infof("%+v", rd)
 			re.wal.Save(rd.HardState, rd.Entries)
 			if !raft.IsEmptySnap(rd.Snapshot) {
 				log.ZAPSugaredLogger().Debugf("recv not empty snapshot !!!!!!!!!")

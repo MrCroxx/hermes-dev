@@ -7,7 +7,7 @@ require (
 	github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f // indirect
 	github.com/fwhezfwhez/tcpx v0.0.0-20200110044634-c35f3f515f4e
 	github.com/gogo/protobuf v1.3.1 // indirect
-	github.com/golang/protobuf v1.3.4 // indirect
+	github.com/golang/protobuf v1.3.5 // indirect
 	github.com/prometheus/client_golang v1.5.0 // indirect
 	github.com/prometheus/procfs v0.0.10 // indirect
 	go.uber.org/multierr v1.5.0 // indirect

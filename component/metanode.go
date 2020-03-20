@@ -222,7 +222,7 @@ func (m *metaNode) Heartbeat(nodeID uint64, extra []byte) {
 	})
 }
 
-func (m *metaNode) LookUpLeader(zoneID uint64) uint64 {
+func (m *metaNode) LookUpLeader(zoneID uint64) (uint64, uint64) {
 	m.mux.Lock()
 	defer m.mux.Unlock()
 	rrs := m.rt.Query(func(rr store.RaftRecord) bool {
@@ -232,9 +232,9 @@ func (m *metaNode) LookUpLeader(zoneID uint64) uint64 {
 		return false
 	})
 	if len(rrs) == 1 {
-		return rrs[0].NodeID
+		return rrs[0].NodeID, rrs[0].PodID
 	}
-	return 0
+	return 0, 0
 }
 
 func (m *metaNode) All() []store.RaftRecord {

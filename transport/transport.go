@@ -62,7 +62,7 @@ type Transport interface {
 	RemoveNode(nodeID uint64) error
 	Raft(nodeID uint64) (Raft, error)
 	// implement meta node func
-	LookUpLeader(zoneID uint64) uint64
+	LookUpLeader(zoneID uint64) (nodeID uint64, podID uint64)
 	// implement data node func
 	AppendData(nodeID uint64, firstIndex uint64, data []string) uint64
 }
@@ -229,9 +229,9 @@ func (t *transport) Raft(nodeID uint64) (Raft, error) {
 
 // implement meta node func
 
-func (t *transport) LookUpLeader(zoneID uint64) uint64 {
+func (t *transport) LookUpLeader(zoneID uint64) (nodeID uint64, podID uint64) {
 	if t.metanode == nil {
-		return 0
+		return 0, 0
 	}
 	return t.metanode.LookUpLeader(zoneID)
 }
