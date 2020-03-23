@@ -18,9 +18,13 @@ const (
 	METACMDTYPE_RAFT_NOTIFY_LEADERSHIP
 	METACMDTYPE_RAFT_TRANSFER_LEADERATHIP
 	METACMDTYPE_NODE_HEARTBEAT
-
+)
+const (
 	DATACMDTYPE_APPEND DATACMDTYPE = iota
-
+	DATACMDTYPE_CACHE
+	DATACMDTYPE_PERSIST
+)
+const (
 	HERMESCMDTYPE_APPEND HERMESCMDTYPE = iota
 )
 
@@ -36,23 +40,36 @@ type MetaCMD struct {
 }
 
 type DataCMD struct {
-	Type       DATACMDTYPE
-	ACKNodeID  uint64
-	FirstIndex uint64
-	Data       []string
+	Type DATACMDTYPE
+	Data []string
+	TS   int64
+	N    uint64
 }
 
-type HermesCMD struct {
-	Type       HERMESCMDTYPE
-	ZoneID     uint64
-	NodeID     uint64
-	FirstIndex uint64
-	Data       []string
+// producer (push)
+// consumer (push)
+
+type HermesProducerCMD struct {
+	Type   HERMESCMDTYPE
+	ZoneID uint64
+	NodeID uint64
+	TS     int64
+	Data   []string
 }
 
-type HermesRSP struct {
-	Err        error  // error
-	NodeID     uint64 // leader id now for client to redirect
-	PodID      uint64 // pod id for leader node now
-	FirstIndex uint64 // first index applied by data node
+type HermesProducerRSP struct {
+	Err    string // error
+	TS     int64
+	NodeID uint64 // leader id now for client to redirect
+	PodID  uint64 // pod id for leader node now
+}
+
+type HermesConsumerCMD struct {
+	ZoneID     uint64   `json:"zone_id"`
+	FirstIndex uint64   `json:"first_index"`
+	Data       []string `json:"data"`
+}
+
+type HermesConsumerRSP struct {
+	ACK uint64 `json:"ack"`
 }

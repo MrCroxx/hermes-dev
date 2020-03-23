@@ -4,7 +4,6 @@ import (
 	"errors"
 	"github.com/coreos/etcd/raft/raftpb"
 	"github.com/fwhezfwhez/tcpx"
-	"mrcroxx.io/hermes/pkg"
 	"net"
 	"time"
 )
@@ -15,12 +14,13 @@ var (
 )
 
 type rpcClient struct {
-	url  string
-	conn net.Conn
+	url   string
+	conn  net.Conn
+	packx *tcpx.Packx
 }
 
 func NewRPCClient(url string) RPCClient {
-	c := &rpcClient{url: url}
+	c := &rpcClient{url: url, packx: tcpx.NewPackx(tcpx.JsonMarshaller{})}
 	go c.tryConn()
 	return c
 }
@@ -31,11 +31,11 @@ func (c *rpcClient) Send(m raftpb.Message) error {
 		return errConnNotEstablished
 	}
 	// encode message
-	buf, err := tcpx.PackWithMarshaller(tcpx.Message{
-		MessageID: RaftID,
-		Header:    nil,
-		Body:      m,
-	}, &pkg.GOBMarshaller{})
+	//buf, err := tcpx.PackWithMarshaller(tcpx.Message{
+	//	MessageID: RaftID,
+	//	Body:      m,
+	//}, &tcpx.JsonMarshaller{})
+	buf, err := c.packx.Pack(RaftID, m)
 	if err != nil {
 		return err
 	}

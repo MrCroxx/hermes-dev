@@ -13,7 +13,7 @@ func Exist(p string) bool {
 }
 
 func Write(p string, data []byte) error {
-	return ioutil.WriteFile(p, data, os.ModeAppend)
+	return ioutil.WriteFile(p, data, 0644)
 }
 
 func CleanTmp(p string) {

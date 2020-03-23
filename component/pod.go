@@ -157,6 +157,9 @@ func (p *pod) startDataNode(zoneID uint64, nodeID uint64, peers map[uint64]uint6
 		TriggerSnapshotEntriesN: p.triggerSnapshotEntriesN,
 		SnapshotCatchUpEntriesN: p.snapshotCatchUpEntriesN,
 		Transport:               p.transport,
+		PushDataURL:             p.cfg.PushDataURL,
+		MaxPushN:                p.cfg.MaxPushN,
+		MaxCacheN:               p.cfg.MaxCacheN,
 		NotifyLeaderShip:        p.metaNode.NotifyLeadership,
 		Heartbeat:               p.metaNode.Heartbeat,
 	})

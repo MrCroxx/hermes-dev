@@ -4,8 +4,6 @@ import (
 	"errors"
 	"github.com/fwhezfwhez/tcpx"
 	"mrcroxx.io/hermes/cmd"
-	"mrcroxx.io/hermes/log"
-	"mrcroxx.io/hermes/pkg"
 	"mrcroxx.io/hermes/transport"
 	"net"
 	"time"
@@ -13,16 +11,19 @@ import (
 
 var (
 	errConnNotEstablished = errors.New("conn has not established yet")
+	errTSMissMatch        = errors.New("timestamp miss match")
+	errRedirect           = errors.New("redirect")
 )
 
 type HermesClient interface {
-	Send(hermesCMD cmd.HermesCMD) error
+	Send(data []string) error
 }
 
 type hermesClient struct {
 	zoneID uint64
 	podID  uint64
 	pods   map[uint64]string
+	nodeID uint64
 	conn   net.Conn
 	packx  *tcpx.Packx
 }
@@ -37,36 +38,36 @@ func NewHermesClient(cfg HermesClientConfig) HermesClient {
 		zoneID: cfg.ZoneID,
 		pods:   cfg.Pods,
 		podID:  1,
-		packx:  tcpx.NewPackx(&pkg.GOBMarshaller{}),
+		packx:  tcpx.NewPackx(tcpx.JsonMarshaller{}),
 	}
 	go c.tryConn()
 	return c
 }
 
-func (c *hermesClient) Send(hermesCMD cmd.HermesCMD) error {
+func (c *hermesClient) Send(data []string) error {
 	// check connection is established
 	if c.conn == nil {
 		return errConnNotEstablished
 	}
 	// encode message
-	log.ZAPSugaredLogger().Debugf("marshall request")
-	buf, err := tcpx.PackWithMarshaller(tcpx.Message{
-		MessageID: transport.HermesCMDID,
-		Header:    nil,
-		Body:      hermesCMD,
-	}, &pkg.GOBMarshaller{})
+	req := cmd.HermesProducerCMD{
+		Type:   cmd.HERMESCMDTYPE_APPEND,
+		ZoneID: c.zoneID,
+		NodeID: c.nodeID,
+		TS:     time.Now().Unix(),
+		Data:   data,
+	}
+	buf, err := c.packx.Pack(transport.HermesProducerCMDID, req)
 	if err != nil {
 		return err
 	}
 	// send message
-	log.ZAPSugaredLogger().Debugf("send request")
 
 	_, err = c.conn.Write(buf)
 	if err != nil {
 		go c.tryConn()
 		return err
 	}
-	log.ZAPSugaredLogger().Debugf("read response")
 
 	//buf, err = tcpx.UnpackToBlockFromReader(c.conn)
 	buf, err = tcpx.FirstBlockOf(c.conn)
@@ -74,16 +75,22 @@ func (c *hermesClient) Send(hermesCMD cmd.HermesCMD) error {
 		go c.tryConn()
 		return err
 	}
-	log.ZAPSugaredLogger().Debugf("unmarshall response")
 
-	var rsp cmd.HermesRSP
-	msg, err := c.packx.Unpack(buf, &rsp)
+	var rsp cmd.HermesProducerRSP
+	_, err = c.packx.Unpack(buf, &rsp)
 	if err != nil {
 		go c.tryConn()
 		return err
 	}
-	log.ZAPSugaredLogger().Debugf("msg : %+v", msg)
-	log.ZAPSugaredLogger().Debugf("rsp : %+v", rsp)
+	if rsp.Err == transport.REDIRECT {
+		c.podID = rsp.PodID
+		c.nodeID = rsp.NodeID
+		go c.tryConn()
+		return errRedirect
+	}
+	if rsp.TS != req.TS {
+		return errTSMissMatch
+	}
 	return err
 }
 

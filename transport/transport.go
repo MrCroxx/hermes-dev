@@ -64,7 +64,7 @@ type Transport interface {
 	// implement meta node func
 	LookUpLeader(zoneID uint64) (nodeID uint64, podID uint64)
 	// implement data node func
-	AppendData(nodeID uint64, firstIndex uint64, data []string) uint64
+	AppendData(nodeID uint64, ts int64, data []string, callback func(int64)) bool
 }
 
 type transport struct {
@@ -238,10 +238,11 @@ func (t *transport) LookUpLeader(zoneID uint64) (nodeID uint64, podID uint64) {
 
 // implement data node func
 
-func (t *transport) AppendData(nodeID uint64, firstIndex uint64, data []string) uint64 {
+func (t *transport) AppendData(nodeID uint64, ts int64, data []string, callback func(int64)) bool {
 	if d, exists := t.ndatanodes[nodeID]; exists {
-		d.Append(firstIndex, data)
-		return d.ACK()
+		d.RegisterACKCallback(ts, callback)
+		d.ProposeAppend(ts, data)
+		return true
 	}
-	return 0
+	return false
 }

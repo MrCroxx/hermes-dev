@@ -14,6 +14,9 @@ type HermesConfig struct {
 	TriggerSnapshotEntriesN uint64            `yaml:"TriggerSnapshotEntriesN",json:"TriggerSnapshotEntriesN"` // entries count when trigger snapshot
 	SnapshotCatchUpEntriesN uint64            `yaml:"SnapshotCatchUpEntriesN",json:"SnapshotCatchUpEntriesN"` // entries count for slow followers to catch up before compacting
 	MetaZoneOffset          uint64            `yaml:"MetaZoneOffset",json:"MetaZoneOffset"`                   // zone id and node id offset for meta nodes
+	MaxCacheN               uint64            `yaml:"MaxCacheN",json:"MaxCacheN"`
+	MaxPushN                uint64            `yaml:"MaxPushN",json:"MaxPushN"`
+	PushDataURL             string            `yaml:"PushDataURL",json:"PushDataURL"`
 	WebUIPort               uint64            `yaml:"WebUIPort",json:"WebUIPort"`
 }
 

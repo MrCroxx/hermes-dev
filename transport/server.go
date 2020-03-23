@@ -3,22 +3,25 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/coreos/etcd/raft/raftpb"
 	"github.com/fwhezfwhez/tcpx"
 	"mrcroxx.io/hermes/cmd"
 	"mrcroxx.io/hermes/log"
-	"mrcroxx.io/hermes/pkg"
 	"sync"
 )
 
 const (
-	RaftID      = 1
-	HermesCMDID = 2
-	HermesRSPID = 3
+	RaftID              = 1
+	HermesProducerCMDID = 2
+	HermesProducerRSPID = 3
+	HermesConsumerCMDID = 4
+	HermesConsumerRSPID = 5
 )
 
 var (
 	errRedirect = errors.New("NodeID not exists in this pod, redirect")
+	REDIRECT    = "redirect"
 )
 
 type rpcServer struct {
@@ -36,11 +39,11 @@ func NewRPCServer(url string, transport Transport) RPCServer {
 }
 
 func (s *rpcServer) Init() error {
-	s.server = tcpx.NewTcpX(&pkg.GOBMarshaller{})
+	s.server = tcpx.NewTcpX(tcpx.ProtobufMarshaller{})
 	s.server.OnConnect = s.onConnect
 	s.server.OnClose = s.onClose
 	s.server.AddHandler(RaftID, s.handleRaft)
-	s.server.AddHandler(HermesCMDID, s.handleHermes)
+	s.server.AddHandler(HermesProducerCMDID, s.handleHermesProducer)
 	go func() {
 		err := s.server.ListenAndServe("tcp", s.url)
 		if err != nil {
@@ -56,7 +59,8 @@ func (s *rpcServer) Close() {
 }
 
 func (s *rpcServer) onConnect(c *tcpx.Context) {
-	log.ZAPSugaredLogger().Debugf("got a new conn.")
+
+	log.ZAPSugaredLogger().Debugf("got a new conn : %s .", c.ClientIP())
 }
 
 func (s *rpcServer) onClose(c *tcpx.Context) {
@@ -65,7 +69,8 @@ func (s *rpcServer) onClose(c *tcpx.Context) {
 
 func (s *rpcServer) handleRaft(c *tcpx.Context) {
 	var m raftpb.Message
-	_, err := c.Bind(&m)
+	_, err := c.BindWithMarshaller(&m, tcpx.JsonMarshaller{})
+	//log.ZAPSugaredLogger().Debugf("%+v", m)
 	if err != nil {
 		log.ZAPSugaredLogger().Errorf("Error raised when binding message, err=%s.", err)
 		return
@@ -78,42 +83,45 @@ func (s *rpcServer) handleRaft(c *tcpx.Context) {
 	_ = raft.Process(context.TODO(), m)
 }
 
-func (s *rpcServer) handleHermes(c *tcpx.Context) {
-	var m cmd.HermesCMD
-	var rsp cmd.HermesRSP
+func (s *rpcServer) handleHermesProducer(c *tcpx.Context) {
+	var req cmd.HermesProducerCMD
+	var rsp cmd.HermesProducerRSP
 
-	_, err := c.Bind(&m)
+	_, err := c.BindWithMarshaller(&req, tcpx.JsonMarshaller{})
 	if err != nil {
 		log.ZAPSugaredLogger().Errorf("Error raised when binding message, err=%s.", err)
-		rsp.Err = err
-		err = c.ReplyWithMarshaller(&pkg.GOBMarshaller{}, HermesRSPID, rsp)
+		rsp.Err = fmt.Sprintf("%s", err)
+		err = c.ReplyWithMarshaller(tcpx.JsonMarshaller{}, HermesProducerRSPID, rsp)
 		if err != nil {
 			log.ZAPSugaredLogger().Errorf("Error raised when replying client, err=%s.", err)
 		}
 		return
 	}
 
-	log.ZAPSugaredLogger().Debugf("%+v", m)
-	rsp.NodeID, rsp.PodID = s.transport.LookUpLeader(m.ZoneID)
-	if m.NodeID == 0 {
-		m.NodeID = rsp.NodeID
+	rsp.NodeID, rsp.PodID = s.transport.LookUpLeader(req.ZoneID)
+	if req.NodeID == 0 {
+		req.NodeID = rsp.NodeID
 	}
-	rsp.FirstIndex = s.transport.AppendData(m.NodeID, m.FirstIndex, m.Data)
-	if rsp.FirstIndex == 0 {
-		rsp.Err = errRedirect
+	if req.NodeID != rsp.NodeID {
+		s.redirectHermesProducer(c, rsp)
+		return
 	}
-	log.ZAPSugaredLogger().Debugf("%+v", rsp)
-	buf, err := tcpx.PackWithMarshaller(tcpx.Message{
-		MessageID: RaftID,
-		Header:    nil,
-		Body:      rsp,
-	}, &pkg.GOBMarshaller{})
-	_, err = c.Conn.Write(buf)
+	if !s.transport.AppendData(req.NodeID, req.TS, req.Data, func(ts int64) {
+		rsp.TS = ts
+		err = c.ReplyWithMarshaller(tcpx.JsonMarshaller{}, HermesProducerRSPID, rsp)
+		if err != nil {
+			log.ZAPSugaredLogger().Errorf("Error raised when replying client, err=%s.", err)
+		}
+	}) {
+		s.redirectHermesProducer(c, rsp)
+		return
+	}
+}
 
-	//c.ProtoBuf()
-	//err = c.ReplyWithMarshaller(&pkg.GOBMarshaller{}, HermesRSPID, rsp)
+func (s *rpcServer) redirectHermesProducer(c *tcpx.Context, rsp cmd.HermesProducerRSP) {
+	rsp.Err = REDIRECT
+	err := c.ReplyWithMarshaller(tcpx.JsonMarshaller{}, HermesProducerRSPID, rsp)
 	if err != nil {
 		log.ZAPSugaredLogger().Errorf("Error raised when replying client, err=%s.", err)
 	}
-	log.ZAPSugaredLogger().Debugf("finish response")
 }

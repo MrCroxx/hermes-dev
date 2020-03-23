@@ -27,9 +27,9 @@ type MetaNode interface {
 }
 
 type DataNode interface {
-	Append(firstIndex uint64, vs []string)
-	ACK() uint64
+	ProposeAppend(ts int64, vs []string)
 	Metadata() []byte
 	DoLead(old uint64)
+	RegisterACKCallback(ts int64, callback func(ts int64))
 	Stop()
 }
