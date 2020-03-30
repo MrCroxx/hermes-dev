@@ -8,6 +8,7 @@ import (
 	"github.com/fwhezfwhez/tcpx"
 	"mrcroxx.io/hermes/cmd"
 	"mrcroxx.io/hermes/log"
+	"mrcroxx.io/hermes/unit"
 	"sync"
 )
 
@@ -25,16 +26,16 @@ var (
 )
 
 type rpcServer struct {
-	url       string
-	transport Transport
-	server    *tcpx.TcpX
-	mux       sync.Mutex
+	url    string
+	core   unit.Core
+	server *tcpx.TcpX
+	mux    sync.Mutex
 }
 
-func NewRPCServer(url string, transport Transport) RPCServer {
+func NewRPCServer(url string, core unit.Core) RPCServer {
 	return &rpcServer{
-		url:       url,
-		transport: transport,
+		url:  url,
+		core: core,
 	}
 }
 
@@ -75,12 +76,15 @@ func (s *rpcServer) handleRaft(c *tcpx.Context) {
 		log.ZAPSugaredLogger().Errorf("Error raised when binding message, err=%s.", err)
 		return
 	}
-	raft, err := s.transport.Raft(m.To)
-	if err != nil {
-		log.ZAPSugaredLogger().Infof("Not a message to this pod, nodeID=%d, err=%s.", m.To, err)
+	rp := s.core.RaftProcessor(m.To)
+	if rp == nil {
+		log.ZAPSugaredLogger().Infof("Not a message to this pod or not finish initializing yet, nodeID=%d.", m.To)
 		return
 	}
-	_ = raft.Process(context.TODO(), m)
+	err = rp(context.TODO(), m)
+	if err != nil {
+		log.ZAPSugaredLogger().Errorf("Error raised when processing raft message, nodeID=%d, err=%s.", m.To, err)
+	}
 }
 
 func (s *rpcServer) handleHermesProducer(c *tcpx.Context) {
@@ -98,7 +102,7 @@ func (s *rpcServer) handleHermesProducer(c *tcpx.Context) {
 		return
 	}
 
-	rsp.NodeID, rsp.PodID = s.transport.LookUpLeader(req.ZoneID)
+	rsp.NodeID, rsp.PodID = s.core.LookUpLeader(req.ZoneID)
 	if req.NodeID == 0 {
 		req.NodeID = rsp.NodeID
 	}
@@ -106,7 +110,7 @@ func (s *rpcServer) handleHermesProducer(c *tcpx.Context) {
 		s.redirectHermesProducer(c, rsp)
 		return
 	}
-	if !s.transport.AppendData(req.NodeID, req.TS, req.Data, func(ts int64) {
+	if !s.core.AppendData(req.NodeID, req.TS, req.Data, func(ts int64) {
 		rsp.TS = ts
 		err = c.ReplyWithMarshaller(tcpx.JsonMarshaller{}, HermesProducerRSPID, rsp)
 		if err != nil {

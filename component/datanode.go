@@ -1,6 +1,7 @@
 package component
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/coreos/etcd/raft/raftpb"
 	"github.com/coreos/etcd/snap"
@@ -28,30 +29,33 @@ type DataNodeMetadata struct {
 }
 
 type dataNode struct {
-	ds           store.DataStore
-	zoneID       uint64
-	nodeID       uint64
-	storageDir   string
-	doLead       func(old uint64)
-	proposeC     chan<- []byte
-	confchangeC  chan<- raftpb.ConfChange
-	snapshotter  *snap.Snapshotter
-	mux          sync.RWMutex
-	advanceC     chan<- struct{}
-	hbTicker     *time.Ticker
-	heartbeat    func(nodeID uint64, extra []byte)
-	peers        map[uint64]uint64
-	transport    transport.Transport
-	ackCallbacks map[int64]func(ts int64)
-	pushDataURL  string
-	maxPushN     uint64
-	maxCacheN    uint64
-	done         chan struct{}
-	caching      int32
-	persisting   int32
+	core          unit.Core
+	ds            store.DataStore
+	zoneID        uint64
+	nodeID        uint64
+	storageDir    string
+	doLead        func(old uint64)
+	proposeC      chan<- []byte
+	confchangeC   chan<- raftpb.ConfChange
+	snapshotter   *snap.Snapshotter
+	mux           sync.RWMutex
+	advanceC      chan<- struct{}
+	hbTicker      *time.Ticker
+	heartbeat     func(nodeID uint64, extra []byte)
+	peers         map[uint64]uint64
+	transport     transport.Transport
+	ackCallbacks  map[int64]func(ts int64)
+	pushDataURL   string
+	maxPushN      uint64
+	maxCacheN     uint64
+	done          chan struct{}
+	caching       int32
+	persisting    int32
+	raftProcessor func(ctx context.Context, m raftpb.Message) error
 }
 
 type DataNodeConfig struct {
+	Core                    unit.Core
 	ZoneID                  uint64
 	NodeID                  uint64
 	Peers                   map[uint64]uint64
@@ -80,6 +84,7 @@ func NewDataNode(cfg DataNodeConfig) unit.DataNode {
 	}
 
 	d := &dataNode{
+		core:         cfg.Core,
 		ds:           store.NewDataStore(pBLK),
 		zoneID:       cfg.ZoneID,
 		nodeID:       cfg.NodeID,
@@ -122,6 +127,7 @@ func NewDataNode(cfg DataNodeConfig) unit.DataNode {
 		DataNode:                d,
 	})
 
+	d.raftProcessor = re.RaftProcessor
 	d.doLead = re.DoLead
 	d.snapshotter = <-re.SnapshotterReadyC
 	d.advanceC = re.AdvanceC
@@ -138,6 +144,14 @@ func NewDataNode(cfg DataNodeConfig) unit.DataNode {
 	}()
 
 	return d
+}
+
+func (d *dataNode) RaftProcessor() func(ctx context.Context, m raftpb.Message) error {
+	return d.raftProcessor
+}
+
+func (d *dataNode) NodeID() uint64 {
+	return d.nodeID
 }
 
 func (d *dataNode) Stop() {
@@ -244,7 +258,7 @@ func (d *dataNode) startPersisting() {
 }
 
 func (d *dataNode) checkLeadership() bool {
-	nid, _ := d.transport.LookUpLeader(d.zoneID)
+	nid, _ := d.core.LookUpLeader(d.zoneID)
 	return nid == d.nodeID
 }
 

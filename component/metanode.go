@@ -1,6 +1,7 @@
 package component
 
 import (
+	"context"
 	"errors"
 	"github.com/coreos/etcd/raft/raftpb"
 	"github.com/coreos/etcd/snap"
@@ -40,6 +41,7 @@ type metaNode struct {
 	startDataNode        func(zoneID uint64, nodeID uint64, peers map[uint64]uint64)
 	hbTicker             *time.Ticker
 	nWakeUpTick          uint64
+	raftProcessor        func(ctx context.Context, m raftpb.Message) error
 }
 
 type MetaNodeConfig struct {
@@ -95,8 +97,8 @@ func NewMetaNode(cfg MetaNodeConfig) unit.MetaNode {
 		GetSnapshot:             m.getSnapshot,
 		MetaNode:                m,
 	})
+	m.raftProcessor = re.RaftProcessor
 	m.doLead = re.DoLead
-	//m.mux = re.Mux
 	m.snapshotter = <-re.SnapshotterReadyC
 	m.proposeC = proposeC
 	m.advanceC = re.AdvanceC
@@ -118,6 +120,10 @@ func NewMetaNode(cfg MetaNodeConfig) unit.MetaNode {
 }
 
 // implement methods
+
+func (m *metaNode) RaftProcessor() func(ctx context.Context, m raftpb.Message) error {
+	return m.raftProcessor
+}
 
 func (m *metaNode) NodeID() uint64 {
 	return m.nodeID

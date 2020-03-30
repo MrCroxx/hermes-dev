@@ -1,8 +1,10 @@
 package component
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"github.com/coreos/etcd/raft/raftpb"
 	"mrcroxx.io/hermes/config"
 	"mrcroxx.io/hermes/log"
 	"mrcroxx.io/hermes/store"
@@ -50,8 +52,8 @@ func NewPod(
 		metaZoneOffset:          cfg.MetaZoneOffset,
 		errC:                    errC,
 		nodes:                   make(map[uint64]unit.DataNode),
-		transport:               transport.NewTransport(cfg.PodID, cfg.Pods[cfg.PodID]),
 	}
+	p.transport = transport.NewTransport(cfg.PodID, cfg.Pods[cfg.PodID], p)
 
 	// init transport
 	// err returns `nil` if transport is ready
@@ -138,6 +140,7 @@ func (p *pod) startDataNode(zoneID uint64, nodeID uint64, peers map[uint64]uint6
 	p.mux.Lock()
 	defer p.mux.Unlock()
 	d := NewDataNode(DataNodeConfig{
+		Core:                    p,
 		ZoneID:                  zoneID,
 		NodeID:                  nodeID,
 		Peers:                   peers,
@@ -203,4 +206,33 @@ func (p *pod) InitMetaZone() error {
 		p.TransferLeadership(zid, nid)
 	}()
 	return nil
+}
+
+func (p *pod) RaftProcessor(nodeID uint64) func(ctx context.Context, m raftpb.Message) error {
+	if p.metaNode == nil {
+		return nil
+	}
+	if p.metaNode.NodeID() == nodeID {
+		return p.metaNode.RaftProcessor()
+	}
+	if d, exists := p.nodes[nodeID]; exists {
+		return d.RaftProcessor()
+	}
+	return nil
+}
+
+func (p *pod) LookUpLeader(zoneID uint64) (nodeID uint64, podID uint64) {
+	if p.metaNode == nil {
+		return 0, 0
+	}
+	return p.metaNode.LookUpLeader(zoneID)
+}
+
+func (p *pod) AppendData(nodeID uint64, ts int64, data []string, callback func(int64)) bool {
+	if d, exists := p.nodes[nodeID]; exists {
+		d.RegisterACKCallback(ts, callback)
+		d.ProposeAppend(ts, data)
+		return true
+	}
+	return false
 }

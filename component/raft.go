@@ -71,6 +71,7 @@ type RaftEngine struct {
 	SnapshotterReadyC <-chan *snap.Snapshotter
 	DoLead            func(old uint64)
 	AdvanceC          chan<- struct{}
+	RaftProcessor     func(ctx context.Context, m raftpb.Message) error
 }
 
 func NewRaftEngine(cfg RaftEngineConfig) RaftEngine {
@@ -97,9 +98,9 @@ func NewRaftEngine(cfg RaftEngineConfig) RaftEngine {
 		// rest of structure populated after WAL replay
 	}
 
-	re.transport.BindRaft(re.nodeID, re)
-	re.transport.BindDataNode(re.nodeID, cfg.DataNode)
-	re.transport.BindMetaNode(cfg.MetaNode)
+	//re.transport.BindRaft(re.nodeID, re)
+	//re.transport.BindDataNode(re.nodeID, cfg.DataNode)
+	//re.transport.BindMetaNode(cfg.MetaNode)
 
 	go re.startRaft()
 	return RaftEngine{
@@ -108,6 +109,7 @@ func NewRaftEngine(cfg RaftEngineConfig) RaftEngine {
 		SnapshotterReadyC: re.snapshotterReadyC,
 		DoLead:            re.doLead,
 		AdvanceC:          ac,
+		RaftProcessor:     re.Process,
 	}
 }
 
@@ -196,7 +198,7 @@ func (re *raftEngine) publishEntries(ents []raftpb.Entry) bool {
 					log.ZAPSugaredLogger().Infof("This node has been removed from the zone! Shutting down.")
 					return false
 				}
-				re.transport.RemoveNode(re.nodeID)
+				//re.transport.RemoveNode(re.nodeID)
 			}
 		}
 

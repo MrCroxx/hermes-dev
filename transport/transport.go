@@ -54,49 +54,36 @@ type Transport interface {
 	AddPod(podID uint64, url string) error
 	RemovePod(podID uint64) error
 	AddNode(podID uint64, nodeID uint64) error
-	BindRaft(nodeID uint64, raft Raft)
-	UnbindRaft(nodeID uint64)
-	BindDataNode(nodeID uint64, d unit.DataNode)
-	UnbindDataNode(nodeID uint64)
-	BindMetaNode(m unit.MetaNode)
 	RemoveNode(nodeID uint64) error
-	Raft(nodeID uint64) (Raft, error)
-	// implement meta node func
-	LookUpLeader(zoneID uint64) (nodeID uint64, podID uint64)
-	// implement data node func
-	AppendData(nodeID uint64, ts int64, data []string, callback func(int64)) bool
 }
 
 type transport struct {
 	podID       uint64
-	snapshotter *snap.Snapshotter
-	mux         sync.RWMutex             // RWMutex to maintain maps below
-	nrafts      map[uint64]Raft          // node id -> raft (for local nodes only)
-	npods       map[uint64]uint64        // node id -> pod id
-	clients     map[uint64]RPCClient     // pod id -> rpc client
-	nodeSets    map[uint64][]uint64      // pod id -> node ids
-	ndatanodes  map[uint64]unit.DataNode // node id -> DataNode
-	metanode    unit.MetaNode
-	server      RPCServer
 	url         string
+	core        unit.Core
+	snapshotter *snap.Snapshotter
+	mux         sync.RWMutex         // RWMutex to maintain maps below
+	npods       map[uint64]uint64    // node id -> pod id
+	clients     map[uint64]RPCClient // pod id -> rpc client
+	nodeSets    map[uint64][]uint64  // pod id -> node ids
+	server      RPCServer
 	done        chan struct{}
 }
 
-func NewTransport(podID uint64, url string) Transport {
+func NewTransport(podID uint64, url string, core unit.Core) Transport {
 	return &transport{
-		podID:      podID,
-		url:        url,
-		nrafts:     make(map[uint64]Raft),
-		nodeSets:   make(map[uint64][]uint64),
-		npods:      make(map[uint64]uint64),
-		clients:    make(map[uint64]RPCClient),
-		done:       make(chan struct{}),
-		ndatanodes: make(map[uint64]unit.DataNode),
+		podID:    podID,
+		url:      url,
+		nodeSets: make(map[uint64][]uint64),
+		npods:    make(map[uint64]uint64),
+		clients:  make(map[uint64]RPCClient),
+		done:     make(chan struct{}),
+		core:     core,
 	}
 }
 
 func (t *transport) Start() error {
-	t.server = NewRPCServer(t.url, t)
+	t.server = NewRPCServer(t.url, t.core)
 	return t.server.Init()
 }
 
@@ -165,84 +152,13 @@ func (t *transport) AddNode(podID uint64, nodeID uint64) (err error) {
 	return
 }
 
-func (t *transport) BindRaft(nodeID uint64, raft Raft) {
-	t.mux.Lock()
-	defer t.mux.Unlock()
-	t.nrafts[nodeID] = raft
-}
-
-func (t *transport) UnbindRaft(nodeID uint64) {
-	t.mux.Lock()
-	defer t.mux.Unlock()
-	if _, exists := t.nrafts[nodeID]; exists {
-		delete(t.nrafts, nodeID)
-	}
-}
-
-func (t *transport) BindDataNode(nodeID uint64, d unit.DataNode) {
-	t.mux.Lock()
-	defer t.mux.Unlock()
-	if d == nil {
-		return
-	}
-	t.ndatanodes[nodeID] = d
-}
-
-func (t *transport) UnbindDataNode(nodeID uint64) {
-	t.mux.Lock()
-	defer t.mux.Unlock()
-	if _, exists := t.ndatanodes[nodeID]; exists {
-		delete(t.ndatanodes, nodeID)
-	}
-}
-
-func (t *transport) BindMetaNode(m unit.MetaNode) {
-	t.mux.Lock()
-	defer t.mux.Unlock()
-	if m == nil {
-		return
-	}
-	t.metanode = m
-}
-
 func (t *transport) RemoveNode(nodeID uint64) (err error) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 	if _, exists := t.npods[nodeID]; exists {
 		delete(t.npods, nodeID)
-		delete(t.nrafts, nodeID)
 	} else {
 		return errNodeNotExists(nodeID)
 	}
 	return
-}
-
-func (t *transport) Raft(nodeID uint64) (Raft, error) {
-	t.mux.RLock()
-	defer t.mux.RUnlock()
-	r, ok := t.nrafts[nodeID]
-	if ok {
-		return r, nil
-	}
-	return nil, errRaftNotExists(nodeID)
-}
-
-// implement meta node func
-
-func (t *transport) LookUpLeader(zoneID uint64) (nodeID uint64, podID uint64) {
-	if t.metanode == nil {
-		return 0, 0
-	}
-	return t.metanode.LookUpLeader(zoneID)
-}
-
-// implement data node func
-
-func (t *transport) AppendData(nodeID uint64, ts int64, data []string, callback func(int64)) bool {
-	if d, exists := t.ndatanodes[nodeID]; exists {
-		d.RegisterACKCallback(ts, callback)
-		d.ProposeAppend(ts, data)
-		return true
-	}
-	return false
 }
