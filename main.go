@@ -8,6 +8,7 @@ import (
 	"mrcroxx.io/hermes/log"
 	"mrcroxx.io/hermes/pkg"
 	"mrcroxx.io/hermes/unit"
+	"mrcroxx.io/hermes/web"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,6 +54,13 @@ func main() {
 	}()
 	pod := component.NewPod(*cfg, ec)
 	defer pod.Stop()
+
+
+	if cfg.WebUIPort != 0 {
+		webUI := web.NewWebUI(pod,cfg.WebUIPort)
+		go webUI.Start()
+		log.ZAPSugaredLogger().Infof("start metadata http server at :%d", cfg.WebUIPort)
+	}
 
 	startCMD(pod)
 
@@ -126,36 +134,6 @@ add:3:33:3:34:4:35:5
 
 
 
-
-
-
-
-add:10000:10001:1:10002:2:10003:3:10004:4:10005:5
-
-add:1:11:1:12:2:13:3
-
-add:2:21:1:22:2:23:3:24:4:25:5
-
-add:3:31:1:32:2:33:3
-
-add:4:41:1:42:2:43:3
-
-add:5:51:1:52:2:53:3
-
-add:6:61:1:62:2:63:3
-
-add:7:71:1:72:2:73:3
-
-add:8:81:1:82:2:83:3
-
-add:9:91:1:92:2:93:3
-
-add:10:101:1:102:2:103:3
-
-
-
-
-
 go run mrcroxx.io/hermes -c f:\hermes-1.yaml
 
 go run mrcroxx.io/hermes -c f:\hermes-2.yaml
@@ -166,6 +144,20 @@ go run mrcroxx.io/hermes -c f:\hermes-4.yaml
 
 go run mrcroxx.io/hermes -c f:\hermes-5.yaml
 
+go run mrcroxx.io/hermes/producer
+
+go run mrcroxx.io/hermes/consumer
+
+
+hermes.exe -c f:\hermes-1.yaml
+
+hermes.exe -c f:\hermes-2.yaml
+
+hermes.exe -c f:\hermes-3.yaml
+
+hermes.exe -c f:\hermes-4.yaml
+
+hermes.exe -c f:\hermes-5.yaml
 
 wget https://unpkg.com/element-ui@2.13.0/lib/theme-chalk/index.css
 wget https://unpkg.com/element-ui@2.13.0/lib/theme-chalk/fonts/element-icons.woff

@@ -1,0 +1,35 @@
+@startuml
+
+hide footbox
+!pragma teoz true
+
+title QoS 2 : Exactly Once
+
+participant Sender as S
+participant Receiver as R
+
+
+activate S
+S -> S : Store msg
+S -> R : <b>1</b> PUBLISH(QoS=2,DUP=0)
+deactivate S
+activate R
+R -> R : Store packet id
+R -> R : Apply msg
+R -> S : <b>2</b> PUBREC(PACKET_ID=packet_id)
+deactivate R
+activate S
+S -> S : Discard msg
+S -> S : Store PACKET_ID
+S -> R : <b>3</b> PUBREL(PACKET_ID)
+deactivate S
+activate R
+R -> R : Discard packet id
+R -> S : <b>4</b> PUBCOMP(PACKET_ID)
+deactivate R
+activate S
+S -> S : Discard PACKET_ID
+||10||
+deactivate S
+
+@enduml

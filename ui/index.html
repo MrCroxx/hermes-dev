@@ -8,91 +8,111 @@
 </head>
 <body>
 <div id="app">
-    <el-container>
-        <el-aside width="200px">
+    <el-container v-loading="loading">
+        <el-aside width="240px">
             <el-menu
-                    default-active="1"
-                    @select="handleSelect">
+                    id="menu"
+                    :default-active="tab"
+                    @select="handleTab">
 
-                <el-menu-item index="1">
+                <el-menu-item index="overview">
                     <i class="el-icon-menu"></i>
                     <span slot="title">Overview</span>
                 </el-menu-item>
 
-                <el-submenu index="2">
+                <el-submenu index="operation">
                     <template slot="title">
-                        <i class="el-icon-location"></i>
-                        <span>DataNodes</span>
+                        <i class="el-icon-edit-outline"></i>
+                        <span>Operation</span>
                     </template>
-                    <el-menu-item-group>
-                        <template slot="title">分组一</template>
-                        <el-menu-item index="2-1">选项1</el-menu-item>
-                        <el-menu-item index="2-2">选项2</el-menu-item>
+                    <el-menu-item-group title="raft">
+                        <el-menu-item index="transfer-leadership"><i class="el-icon-refresh"></i>Transfer Leadership</el-menu-item>
                     </el-menu-item-group>
-                    <el-menu-item-group title="分组2">
-                        <el-menu-item index="2-3">选项3</el-menu-item>
+                    <el-menu-item-group title="data zone">
+                        <el-menu-item index="add-data-zone"><i class="el-icon-plus"></i>Add Data Zone</el-menu-item>
                     </el-menu-item-group>
-                    <el-submenu index="2-4">
-                        <template slot="title">选项4</template>
-                        <el-menu-item index="2-4-1">选项1</el-menu-item>
-                    </el-submenu>
                 </el-submenu>
 
-                <el-menu-item index="3">
+                <el-menu-item index="config">
                     <i class="el-icon-setting"></i>
                     <span slot="title">Config</span>
                 </el-menu-item>
             </el-menu>
         </el-aside>
         <el-container>
-            <template v-if="tab=='1'">
+            <template v-if="tab=='overview'">
                 <el-header>
                     <h1>Hermes Overview</h1>
                 </el-header>
                 <el-main>
-                    <el-row>
-                        <el-col>
-                            <h2>Meta Zone</h2>
-                        </el-col>
-                    </el-row>
-                    <el-row>
-                        <el-col>
-                            <el-table :data="metazone" :row-class-name="isDead">
-                                <el-table-column prop="ZoneID" label="ZoneID"></el-table-column>
-                                <el-table-column prop="NodeID" label="NodeID"></el-table-column>
-                                <el-table-column prop="PodID" label="PodID"></el-table-column>
-                                <el-table-column prop="IsLeader" label="IsLeader"></el-table-column>
-                                <el-table-column prop="HeartbeatStr" label="Heartbeat"></el-table-column>
-                            </el-table>
-                        </el-col>
-                    </el-row>
-                    <el-row>
-                        <el-col>
-                            <h2>Data Zones</h2>
-                        </el-col>
-                    </el-row>
-                    <el-row>
-                        <el-col>
-                            <template v-for="(v,k,i) in zones">
-                                <h3>ZoneID : {{k}}</h3>
-                                <el-table :data="v" :row-class-name="isDead">
+                    <template v-if="metazone.length>0">
+                        <el-row>
+                            <el-col>
+                                <i class="el-icon-chat-dot-round"></i>
+                                <el-tag size="mini" effect="plain" type="info">Online</el-tag>
+                                <el-tag size="mini" effect="plain" type="danger">Offline</el-tag>
+                            </el-col>
+                        </el-row>
+                        <el-row>
+                            <el-col>
+                                <h2>Meta Zone</h2>
+                            </el-col>
+                        </el-row>
+                        <el-row>
+                            <el-col>
+                                <el-table :data="metazone"
+                                          :row-class-name="isDead"
+                                          :default-sort="{prop:'NodeID'}">
                                     <el-table-column prop="ZoneID" label="ZoneID"></el-table-column>
                                     <el-table-column prop="NodeID" label="NodeID"></el-table-column>
                                     <el-table-column prop="PodID" label="PodID"></el-table-column>
                                     <el-table-column prop="IsLeader" label="IsLeader"></el-table-column>
-                                    <el-table-column prop="DeletedIndex" label="DeletedIndex"></el-table-column>
-                                    <el-table-column prop="PersistedIndex" label="PersistedIndex"></el-table-column>
-                                    <el-table-column prop="CachedIndex" label="CachedIndex"></el-table-column>
-                                    <el-table-column prop="FreshIndex" label="FreshIndex"></el-table-column>
                                     <el-table-column prop="HeartbeatStr" label="Heartbeat"></el-table-column>
                                 </el-table>
-                            </template>
-                        </el-col>
-                    </el-row>
+                            </el-col>
+                        </el-row>
+                        <el-row>
+                            <el-col>
+                                <h2>Data Zones</h2>
+                            </el-col>
+                        </el-row>
+                        <el-row>
+                            <el-col>
+                                <template v-for="(v,k,i) in datazones">
+                                    <h3>ZoneID : {{k}}</h3>
+                                    <el-table :data="v"
+                                              :row-class-name="isDead"
+                                              :default-sort="{prop:'NodeID'}">
+                                        <el-table-column prop="ZoneID" label="ZoneID"></el-table-column>
+                                        <el-table-column prop="NodeID" label="NodeID"></el-table-column>
+                                        <el-table-column prop="PodID" label="PodID"></el-table-column>
+                                        <el-table-column prop="IsLeader" label="IsLeader"></el-table-column>
+                                        <el-table-column prop="Deleted" label="Deleted[Index]"></el-table-column>
+                                        <el-table-column prop="Persisted" label="Persisted[Index]"></el-table-column>
+                                        <el-table-column prop="Cached" label="Cached[Index]"></el-table-column>
+                                        <el-table-column prop="Fresh" label="Fresh[Index]"></el-table-column>
+                                        <el-table-column prop="HeartbeatStr" label="Heartbeat"></el-table-column>
+                                    </el-table>
+                                </template>
+                            </el-col>
+                        </el-row>
+                    </template>
+                    <template v-else>
+                        <el-row>
+                            <el-col>
+                                <h2>Hermes probably not initialized yet.</h2>
+                            </el-col>
+                        </el-row>
+                        <el-row>
+                            <el-col>
+                                <el-button type="primary" @click="initHermes">Initialize Now</el-button>
+                            </el-col>
+                        </el-row>
+                    </template>
                 </el-main>
             </template>
 
-            <template v-if="tab=='3'">
+            <template v-if="tab=='config'">
                 <el-header>
                     <h1>Hermes Config</h1>
                 </el-header>
@@ -107,45 +127,225 @@
                     </el-row>
                 </el-main>
             </template>
+            <template v-if="tab=='transfer-leadership'">
+                <el-header>
+                    <h1>Transfer Leadership</h1>
+                </el-header>
+                <el-main>
+                    <el-row>
+                        <el-col>
+                            <el-card class="form-cmd">
+                                <el-form ref="tl" :model="tl" label-width="140px" :rules="tlRules">
+                                    <el-form-item prop="ZoneID" label="Zone ID">
+                                        <el-select v-model.number="tl.ZoneID" class="input-id" placeholder="Please select a zone">
+                                            <el-option v-for="zid in zoneIDs()" :label="zid" :value="zid"></el-option>
+                                        </el-select>
+                                    </el-form-item>
+                                    <el-form-item v-if="tl.ZoneID!==null" label="Node ID">
+                                        <el-select v-model.number="tl.NodeID" class="input-id" placeholder="Please select a node">
+                                            <el-option v-for="nid in nodeIDs(tl.ZoneID)" :label="nid" :value="nid"></el-option>
+                                        </el-select>
+                                    </el-form-item>
+                                    <el-form-item>
+                                        <el-button type="primary" @click="submitTL">Submit</el-button>
+                                    </el-form-item>
+                                </el-form>
+                            </el-card>
+                        </el-col>
+                    </el-row>
+                </el-main>
+            </template>
+            <template v-if="tab=='add-data-zone'">
+                <el-header>
+                    <h1>Add Data Zone</h1>
+                </el-header>
+                <el-main>
+                    <el-row>
+                        <el-col>
+                            <el-card class="form-cmd">
+                                <el-form ref="adz" :model="adz" label-width="140px" :rules="adzRules">
+                                    <el-form-item prop="ZoneID" label="Zone ID">
+                                        <el-input v-model.number="adz.ZoneID" class="input-id" placeholder="Please input zone id"></el-input>
+                                    </el-form-item>
+                                    <el-form-item prop="RC" label="Replication Count">
+                                        <el-input v-model.number="adz.RC" class="input-id" :disabled="true"></el-input>
+                                    </el-form-item>
+                                    <el-form-item
+                                            v-for="(node,index) in adz.Nodes"
+                                            :label="'Node '+(index+1)"
+                                            :key="node.key"
+                                            :prop="'Nodes.'+index"
+                                            :rules="[{validator: validateNode, trigger: 'change'}]"
+                                    >
+                                        <el-input v-model.number="node.NodeID" :inline="true" class="input-id-half" placeholder="NodeID"></el-input>
+                                        <el-select v-model.number="node.PodID" :inline="true" class="input-id-half" placeholder="PodID">
+                                            <el-option v-for="pid in podIDs()" :label="pid" :value="pid"></el-option>
+                                        </el-select>
+                                        <el-button @click.prevent="adzDeleteNode(index)">Delete</el-button>
+                                    </el-form-item>
+
+                                    <el-form-item>
+                                        <el-button type="primary" @click="submitADZ">Submit</el-button>
+                                        <el-button @click="adzMoreNode">More Node</el-button>
+                                    </el-form-item>
+                                </el-form>
+                            </el-card>
+                        </el-col>
+                    </el-row>
+                </el-main>
+            </template>
         </el-container>
     </el-container>
 </div>
 <script src="/static/js/vue.js"></script>
 <script src="/static/js/vue-resource.js"></script>
 <script src="/static/js/element.js"></script>
+<script src="/static/js/axios.js"></script>
 <script>
     window.onload = function () {
         var app = new Vue({
             el: '#app',
-            data: {
-                message: 'Hello Hermes!',
-                metadata: null,
-                ticker: null,
-                tab: "1",
-                config: [],
-                zones: {},
-                metazone: [],
+            data() {
+                let validateZoneIDNotExists = (rule, value, callback) => {
+                    zids = new Set(this.zoneIDs());
+                    if (zids.has(value)) return callback(new Error('ZoneID already exists'));
+                    return callback();
+                };
+                let validateNode = (rule, value, callback) => {
+                    let nids = new Set(this.nodeIDs(null));
+                    if (nids.has(value.NodeID)) return callback("NodeID already exists");
+                    return callback();
+                };
+                let validateRC = (rule, value, callback) => {
+                    if (value < 3) return callback("replication count must be greater than 3");
+                    return callback();
+                };
+                return {
+                    message: 'Hello Hermes!',
+                    metadata: null,
+                    ticker: null,
+                    tab: "overview",
+                    config: [],
+                    datazones: {},
+                    metazone: [],
+                    tl: null,
+                    adz: null,
+                    tlRules: {
+                        ZoneID: [
+                            {required: true, trigger: "change"}
+                        ],
+                        NodeID: [
+                            {required: true, trigger: "change"}
+                        ]
+                    },
+                    adzRules: {
+                        ZoneID: [
+                            {required: true, trigger: "change"},
+                            {type: "number", trigger: "change"},
+                            {validator: validateZoneIDNotExists, trigger: "change"}
+                        ],
+                        RC: [
+                            {validator: validateRC, trigger: "change"}
+                        ],
+                    },
+                    validateNode: validateNode,
+                }
             },
             created: function () {
                 console.log("Hello Hermes!");
                 this.ticker = setInterval(this.getMetadata, 1000);
             },
             methods: {
-                handleSelect(key, keyPath) {
+                handleTab(key, keyPath) {
                     this.tab = key;
+                    switch (key) {
+                        case "transfer-leadership":
+                            this.tl = {
+                                ZoneID: null,
+                                NodeID: null,
+                            };
+                            this.$nextTick(() => this.clearValidate('tl'));
+                            break;
+                        case "add-data-zone":
+                            this.adz = {
+                                ZoneID: null,
+                                RC: 0,
+                                Nodes: [],
+                            };
+                            this.$nextTick(() => this.clearValidate('adz'));
+
+                            break;
+                    }
+                },
+                clearValidate(ref) {
+                    this.$refs[ref].clearValidate();
                 },
                 date2string(date) {
-                    return `${date.getFullYear()}-${date.getMonth().toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`
+                    return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`
                 },
                 isDead({row, rowIndex}) {
                     if (row.Heartbeat.getTime() < ((new Date()).getTime() - 10 * 1000)) {
-                        return 'warning-row'
+                        return 'danger-row'
                     }
                     return ''
                 },
+                alertError(err) {
+                    this.$message({
+                        message: err,
+                        type: 'error',
+                    });
+                },
+                initHermes() {
+                    axios
+                        .post("/cmd/init")
+                        .then(response => {
+                            this.$message({
+                                message: 'success',
+                                type: 'success',
+                            });
+                        })
+                        .catch(this.alertError)
+                },
+                submitTL() {
+                    axios
+                        .post("/cmd/transfer-leadership", this.tl)
+                        .then(response => {
+                            this.tab = 'overview';
+                            this.$message({
+                                message: 'success',
+                                type: 'success',
+                            });
+                        })
+                        .catch(this.alertError)
+                },
+                adzMoreNode() {
+                    this.adz.Nodes.push({
+                        NodeID: null,
+                        PodID: null,
+                        key: Date.now(),
+                    });
+                    this.adz.RC = this.adz.Nodes.length;
+                },
+                adzDeleteNode(index) {
+                    this.adz.Nodes.splice(index, 1);
+                    this.adz.RC = this.adz.Nodes.length;
+                },
+                submitADZ() {
+                    axios
+                        .post("/cmd/add-data-zone", this.adz)
+                        .then(response => {
+                            this.tab = 'overview';
+                            this.$message({
+                                message: 'success',
+                                type: 'success',
+                            });
+                        })
+                        .catch(this.alertError)
+                },
                 getMetadata() {
-                    this.$http.get("/json/metadata").then(
-                        response => {
+                    axios
+                        .get("/json/metadata")
+                        .then(response => {
                             this.metadata = response.data;
                             // parse config
                             config = this.metadata.Config;
@@ -165,7 +365,7 @@
                             this.config = tmp;
                             // parse zone
                             metazone = [];
-                            zones = {};
+                            datazones = {};
                             metaZoneOffset = config.MetaZoneOffset;
                             for (var i in this.metadata.RaftRecords) {
                                 // raw raft record
@@ -179,12 +379,12 @@
                                     Heartbeat: new Date(rrr.Heartbeat),
                                     HeartbeatStr: this.date2string(new Date(rrr.Heartbeat)),
                                 };
-                                if (rrr.Extra != "") {
+                                if (rrr.Extra !== "") {
                                     extra = JSON.parse(rrr.Extra);
-                                    rr.DeletedIndex = extra.DeletedIndex;
-                                    rr.PersistedIndex = extra.PersistedIndex;
-                                    rr.CachedIndex = extra.CachedIndex;
-                                    rr.FreshIndex = extra.FreshIndex;
+                                    rr.Deleted = `${extra.DeletedIndex} [${extra.DeletedIndex}]`;
+                                    rr.Persisted = `${extra.PersistedIndex - extra.DeletedIndex} [${extra.PersistedIndex}]`;
+                                    rr.Cached = `${extra.CachedIndex - extra.PersistedIndex} [${extra.CachedIndex}]`;
+                                    rr.Fresh = `${extra.FreshIndex - extra.CachedIndex} [${extra.FreshIndex}]`;
                                 }
 
 
@@ -193,24 +393,58 @@
                                     continue;
                                 }
                                 zid = rr.ZoneID;
-                                if (zones[zid] == undefined) {
-                                    zones[zid] = [];
+                                if (datazones[zid] === undefined) {
+                                    datazones[zid] = [];
                                 }
-                                zones[zid].push(rr);
+                                datazones[zid].push(rr);
                             }
-                            this.zones = zones;
+                            this.datazones = datazones;
                             this.metazone = metazone;
+                        })
+                        .catch(err => {
+                            console.log(err);
+                        });
+                    // this.$http.get("/json/metadata").then();
+                },
+                podIDs() {
+                    let pids = new Set();
+                    this.metadata.RaftRecords.forEach(rr => {
+                        pids.add(rr["PodID"]);
+                    });
+                    return Array.from(pids).sort();
+                },
+                zoneIDs() {
+                    let zids = new Set();
+                    this.metadata.RaftRecords.forEach(rr => {
+                        zids.add(rr["ZoneID"]);
+                    });
+                    return Array.from(zids).sort();
+                },
+                nodeIDs(zid) {
+                    if (zid == null) {
+                        let nids = new Set();
+                        this.metadata.RaftRecords.forEach(rr => {
+                            nids.add(rr["NodeID"]);
+                        });
+                        return Array.from(nids).sort();
+                    }
+                    let nids = new Set();
+                    this.metadata.RaftRecords.forEach(rr => {
+                        if (rr["ZoneID"] == zid) {
+                            nids.add(rr["NodeID"]);
+                        }
+                    });
+                    return Array.from(nids).sort();
+                },
 
-                            console.log(response.data)
-                        },
-                        response => {
-                            console.log("error raised when getting meta data json")
-                        },
-                    );
+            },
+            computed: {
+                loading() {
+                    return this.metadata === null;
                 }
             }
         });
-    }
+    };
 </script>
 </body>
 </html>

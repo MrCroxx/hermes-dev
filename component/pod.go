@@ -1,7 +1,6 @@
 package component
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"mrcroxx.io/hermes/config"
@@ -9,19 +8,14 @@ import (
 	"mrcroxx.io/hermes/store"
 	"mrcroxx.io/hermes/transport"
 	"mrcroxx.io/hermes/unit"
-	"net/http"
 	"path"
 	"sync"
+	"time"
 )
 
 var (
 	errMetaNodeNotExist = errors.New("metaNode node in this pod not exist")
 )
-
-type Metadata struct {
-	Config      config.HermesConfig
-	RaftRecords []store.RaftRecord
-}
 
 // pod
 type pod struct {
@@ -67,11 +61,6 @@ func NewPod(
 		return nil
 	}
 	log.ZAPSugaredLogger().Debugf("transport started.")
-
-	if cfg.WebUIPort != 0 {
-		go p.startWebUI(cfg.WebUIPort)
-		log.ZAPSugaredLogger().Infof("start metadata http server at :%d", cfg.WebUIPort)
-	}
 
 	p.connectCluster()
 	p.startMetaNode()
@@ -184,34 +173,34 @@ func (p *pod) doLeadershipTransfer(podID uint64, old uint64, transferee uint64) 
 	}
 }
 
-func (p *pod) startWebUI(port uint64) {
-	http.HandleFunc("/json/metadata", p.metadata)
-	http.Handle("/", http.FileServer(http.Dir("./ui")))
-	err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
-	if err != nil {
-		log.ZAPSugaredLogger().Fatalf("Error raised when serving http, err=%s.", err)
-		panic(err)
-	}
-}
-
-func (p *pod) metadata(rsp http.ResponseWriter, req *http.Request) {
+func (p *pod) Metadata() (*unit.Metadata, error) {
 	rr, err := p.All()
 	if err != nil {
-		http.Error(rsp, "Internal Server Error", http.StatusInternalServerError)
-		return
+		return nil, err
 	}
-	metadata := Metadata{
+	return &unit.Metadata{
 		Config:      p.cfg,
 		RaftRecords: rr,
+	}, nil
+}
+
+func (p *pod) InitMetaZone() error {
+	zid := p.metaZoneOffset
+	nodes := make(map[uint64]uint64)
+	nid := uint64(0)
+	for pid, _ := range p.pods {
+		if nid == 0 {
+			nid = pid + p.metaZoneOffset
+		}
+		nodes[pid+p.metaZoneOffset] = pid
 	}
-	bs, err := json.Marshal(metadata)
-	if err != nil {
-		http.Error(rsp, "Internal Server Error", http.StatusInternalServerError)
-		return
+	if err := p.AddRaftZone(zid, nodes); err != nil {
+		return err
 	}
-	_, err = fmt.Fprintf(rsp, string(bs))
-	if err != nil {
-		http.Error(rsp, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
+	t := time.NewTicker(time.Second * 3)
+	go func() {
+		<-t.C
+		p.TransferLeadership(zid, nid)
+	}()
+	return nil
 }

@@ -221,7 +221,7 @@ func (d *dataNode) startPushing() {
 
 func (d *dataNode) startPersisting() {
 	for {
-		time.Sleep(time.Millisecond * 100)
+		time.Sleep(time.Second * 3)
 		select {
 		case <-d.done:
 			return
@@ -271,6 +271,7 @@ func (d *dataNode) pushData() (n uint64, ack uint64) {
 	}
 	rrsp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		// Consumer may be not accessible
 		log.ZAPSugaredLogger().Errorf("Error raised when sending HermesConsumerCMD request, err=%s.", err)
 		return 0, 0
 	}

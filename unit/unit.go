@@ -1,6 +1,14 @@
 package unit
 
-import "mrcroxx.io/hermes/store"
+import (
+	"mrcroxx.io/hermes/config"
+	"mrcroxx.io/hermes/store"
+)
+
+type Metadata struct {
+	Config      config.HermesConfig
+	RaftRecords []store.RaftRecord
+}
 
 type Pod interface {
 	Stop()
@@ -8,6 +16,9 @@ type Pod interface {
 	AddRaftZone(zoneID uint64, nodes map[uint64]uint64) error
 	TransferLeadership(zoneID uint64, nodeID uint64) error
 	WakeUpNode(nodeID uint64)
+
+	Metadata() (*Metadata, error)
+	InitMetaZone()error
 
 	All() ([]store.RaftRecord, error)
 }

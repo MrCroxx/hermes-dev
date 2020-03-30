@@ -2,6 +2,31 @@ h1 {
     font-size: 30px;
 }
 
+
+.el-table .info-row {
+    background: #E9E9EB;
+}
+
+.el-table .success-row {
+    background: #E1F3D8;
+}
+
 .el-table .warning-row {
-    background: oldlace;
+    background: #FAECD8;
+}
+
+.el-table .danger-row {
+    background: #FDE2E2;
+}
+
+.form-cmd {
+    width: 520px;
+}
+
+.input-id {
+    width: 220px;
+}
+
+.input-id-half {
+    width: 110px;
 }

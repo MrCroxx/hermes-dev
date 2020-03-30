@@ -51,7 +51,7 @@ func useFlight() {
 	}()
 	i := uint64(0)
 	for {
-		time.Sleep(time.Millisecond * 100)
+		time.Sleep(time.Millisecond * 1)
 		commitC <- "窝窝头,一块钱四个,嘿嘿!"
 		i++
 		log.ZAPSugaredLogger().Infof("%d", i)
