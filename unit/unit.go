@@ -13,9 +13,12 @@ type Metadata struct {
 }
 
 type Core interface {
+	PodID() uint64
 	RaftProcessor(nodeID uint64) func(ctx context.Context, m raftpb.Message) error
 	LookUpLeader(zoneID uint64) (nodeID uint64, podID uint64)
 	AppendData(nodeID uint64, ts int64, data []string, callback func(int64)) bool
+	LookUpNextFreshIndex(nodeID uint64) uint64
+	StartDataNode(zoneID uint64, nodeID uint64, peers map[uint64]uint64)
 }
 
 type Pod interface {
@@ -40,15 +43,17 @@ type MetaNode interface {
 	AddRaftZone(zoneID uint64, nodes map[uint64]uint64) error
 	TransferLeadership(zoneID uint64, nodeID uint64) error
 	NotifyLeadership(nodeID uint64)
-	All() []store.RaftRecord
 	LookUpLeader(zoneID uint64) (nodeID uint64, podID uint64)
 	Heartbeat(nodeID uint64, extra []byte)
-	WakeUp()
-	WakeUpNode(nodeID uint64)
+	OfflineNodes() []store.RaftRecord
+	LookUpZoneRRs(zoneID uint64) []store.RaftRecord
+	LookUpDeadNodeRR(nodeID uint64) (store.RaftRecord, bool)
+	All() []store.RaftRecord
 }
 
 type DataNode interface {
 	Node
+	NextFreshIndex() uint64
 	ProposeAppend(ts int64, vs []string)
 	Metadata() []byte
 	RegisterACKCallback(ts int64, callback func(ts int64))

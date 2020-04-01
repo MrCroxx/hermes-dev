@@ -16,7 +16,7 @@ var (
 type flight struct {
 	commitC <-chan string
 	errC    chan<- error
-	client  HermesClient
+	client  ProducerClient
 	cache   []string
 	done    chan struct{}
 	mux     sync.Mutex
@@ -35,7 +35,7 @@ func NewFlight(cfg FlightConfig) <-chan error {
 		errC:    eC,
 		cache:   make([]string, 0),
 		done:    make(chan struct{}),
-		client: NewHermesClient(HermesClientConfig{
+		client: NewProducerClient(ProducerClientConfig{
 			ZoneID: cfg.ZoneID,
 			Pods:   cfg.Pods,
 		}),

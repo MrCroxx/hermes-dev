@@ -7,7 +7,6 @@ import (
 
 type METACMDTYPE int
 type DATACMDTYPE int
-type HERMESCMDTYPE int
 
 var (
 	HEIHEIHEI = "asd"
@@ -23,9 +22,6 @@ const (
 	DATACMDTYPE_APPEND DATACMDTYPE = iota
 	DATACMDTYPE_CACHE
 	DATACMDTYPE_PERSIST
-)
-const (
-	HERMESCMDTYPE_APPEND HERMESCMDTYPE = iota
 )
 
 type MetaCMD struct {
@@ -46,22 +42,18 @@ type DataCMD struct {
 	N    uint64
 }
 
-// producer (push)
-// consumer (push)
-
 type HermesProducerCMD struct {
-	Type   HERMESCMDTYPE
 	ZoneID uint64
-	NodeID uint64
 	TS     int64
+	Index  uint64
 	Data   []string
 }
 
 type HermesProducerRSP struct {
 	Err    string // error
 	TS     int64
-	NodeID uint64 // leader id now for client to redirect
 	PodID  uint64 // pod id for leader node now
+	Index  uint64
 }
 
 type HermesConsumerCMD struct {

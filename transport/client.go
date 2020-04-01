@@ -13,19 +13,19 @@ var (
 	errConnNotEstablished = errors.New("conn has not established yet")
 )
 
-type rpcClient struct {
+type tcpClient struct {
 	url   string
 	conn  net.Conn
 	packx *tcpx.Packx
 }
 
-func NewRPCClient(url string) RPCClient {
-	c := &rpcClient{url: url, packx: tcpx.NewPackx(tcpx.JsonMarshaller{})}
+func NewTCPClient(url string) TCPClient {
+	c := &tcpClient{url: url, packx: tcpx.NewPackx(tcpx.JsonMarshaller{})}
 	go c.tryConn()
 	return c
 }
 
-func (c *rpcClient) Send(m raftpb.Message) error {
+func (c *tcpClient) Send(m raftpb.Message) error {
 	// check connection is established
 	if c.conn == nil {
 		return errConnNotEstablished
@@ -47,12 +47,12 @@ func (c *rpcClient) Send(m raftpb.Message) error {
 	return err
 }
 
-func (c *rpcClient) Close() {
+func (c *tcpClient) Close() {
 	c.conn.Close()
 	c.conn = nil
 }
 
-func (c *rpcClient) tryConn() {
+func (c *tcpClient) tryConn() {
 	c.conn = nil
 	var err error
 	for {

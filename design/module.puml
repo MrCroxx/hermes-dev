@@ -2,6 +2,9 @@
 
 package hermes{
 
+    
+
+
     package raft{
         interface RaftComponent
         class raftComponent
@@ -11,27 +14,59 @@ package hermes{
 
     package unit{
 
-        interface Pod
-        class pod
-        interface DataNode
-        class dataNode
-        interface MetaNode
-        class metaNode
+        interface Core{
+            + PodID() uint64
+	        + RaftProcessor(nodeID uint64) func(ctx context.Context, m raftpb.Message) error
+	        + LookUpLeader(zoneID uint64) (nodeID uint64, podID uint64)
+	        + AppendData(nodeID uint64, ts int64, data []string, callback func(int64)) bool
+	        + LookUpNextFreshIndex(nodeID uint64) uint64
+        }
 
+        interface Pod{
+            + Stop()
+            + AddRaftZone(zoneID uint64, nodes map[uint64]uint64) error
+            + TransferLeadership(zoneID uint64, nodeID uint64) error
+            + WakeUpNode(nodeID uint64)
+            + Metadata() (*Metadata, error)
+            + InitMetaZone() error
+            + All() ([]store.RaftRecord, error) 
+        }
 
-        Pod <|.. pod
-        MetaNode <|.. metaNode
-        DataNode <|.. dataNode
+        interface Node{
+            + NodeID() uint64
+	        + RaftProcessor() func(ctx context.Context, m raftpb.Message) error
+	        + DoLead(old uint64)
+	        + Stop()
+        }
 
+        interface MetaNode{
+            + AddRaftZone(zoneID uint64, nodes map[uint64]uint64) error
+	        + TransferLeadership(zoneID uint64, nodeID uint64) error
+            + NotifyLeadership(nodeID uint64)
+            + All() []store.RaftRecord
+            + LookUpLeader(zoneID uint64) (nodeID uint64, podID uint64)
+            + Heartbeat(nodeID uint64, extra []byte)
+            + WakeUp()
+            + WakeUpNode(nodeID uint64)
+        }
+        MetaNode -|> Node
 
-        pod o-- MetaNode
-        pod o-- DataNode
-        pod o-- RaftComponent
-
-
-
-
+        interface DataNode{
+            + NextFreshIndex() uint64
+            + ProposeAppend(ts int64, vs []string)
+            + Metadata() []byte
+            + RegisterACKCallback(ts int64, callback func(ts int64))
+        }
+        DataNode -|> Node
     }
+
+    package component{
+        class pod
+        pod ..|> Pod
+        pod ..|> Core
+    }
+
+
 
     package transport{
         interface Transport

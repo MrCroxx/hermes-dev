@@ -169,7 +169,6 @@ func (d *dataNode) Stop() {
 func (d *dataNode) DoLead(old uint64) { d.doLead(old) }
 
 func (d *dataNode) Metadata() []byte {
-
 	d.mux.Lock()
 	defer d.mux.Unlock()
 	di, pi, ci, fi := d.ds.Indexes()
@@ -180,6 +179,13 @@ func (d *dataNode) Metadata() []byte {
 		FreshIndex:     fi,
 	})
 	return s
+}
+
+func (d *dataNode) NextFreshIndex() uint64 {
+	d.mux.Lock()
+	defer d.mux.Unlock()
+	_, _, _, fi := d.ds.Indexes()
+	return fi + 1
 }
 
 func (d *dataNode) ProposeAppend(ts int64, vs []string) {

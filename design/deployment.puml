@@ -1,0 +1,15 @@
+@startuml
+
+cloud Consumer
+node Internet
+
+node Server1{
+    artifact Hermes1
+}
+
+Consumer -- Internet
+Internet -- Server1
+
+
+
+@enduml

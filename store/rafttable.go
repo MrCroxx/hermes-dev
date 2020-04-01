@@ -14,20 +14,31 @@ type RaftRecord struct {
 	Extra     string    `json:"Extra"`
 }
 
-type RaftTable struct {
+type RaftTable interface {
+	All() (result []RaftRecord)
+	Query(condition func(rr RaftRecord) bool) (result []RaftRecord)
+	Insert(rrs []RaftRecord) int
+	InsertIfNotExist(rrs []RaftRecord, condition func(rr RaftRecord) bool) int
+	Delete(condition func(rr RaftRecord) bool) int
+	Update(condition func(rr RaftRecord) bool, update func(rr *RaftRecord)) int
+	GetSnapshot() ([]byte, error)
+	RecoverFromSnapshot(snap []byte) error
+}
+
+type raftTable struct {
 	records []RaftRecord
 }
 
-func NewRaftTable() *RaftTable {
-	return &RaftTable{records: []RaftRecord{}}
+func NewRaftTable() RaftTable {
+	return &raftTable{records: []RaftRecord{}}
 }
 
-func (rt *RaftTable) All() (result []RaftRecord) {
+func (rt *raftTable) All() (result []RaftRecord) {
 	result = append(result, rt.records[:]...)
 	return result
 }
 
-func (rt *RaftTable) Query(condition func(rr RaftRecord) bool) (result []RaftRecord) {
+func (rt *raftTable) Query(condition func(rr RaftRecord) bool) (result []RaftRecord) {
 	result = []RaftRecord{}
 	for _, rr := range rt.records {
 		if condition(rr) {
@@ -37,12 +48,12 @@ func (rt *RaftTable) Query(condition func(rr RaftRecord) bool) (result []RaftRec
 	return result
 }
 
-func (rt *RaftTable) Insert(rrs []RaftRecord) int {
+func (rt *raftTable) Insert(rrs []RaftRecord) int {
 	rt.records = append(rt.records, rrs...)
 	return len(rrs)
 }
 
-func (rt *RaftTable) InsertIfNotExist(rrs []RaftRecord, condition func(rr RaftRecord) bool) int {
+func (rt *raftTable) InsertIfNotExist(rrs []RaftRecord, condition func(rr RaftRecord) bool) int {
 	exists := false
 	for _, rr := range rt.records {
 		if condition(rr) {
@@ -57,7 +68,7 @@ func (rt *RaftTable) InsertIfNotExist(rrs []RaftRecord, condition func(rr RaftRe
 	return len(rrs)
 }
 
-func (rt *RaftTable) Delete(condition func(rr RaftRecord) bool) int {
+func (rt *raftTable) Delete(condition func(rr RaftRecord) bool) int {
 	n := 0
 	for i := 0; i < len(rt.records); {
 		if condition(rt.records[i]) {
@@ -70,7 +81,7 @@ func (rt *RaftTable) Delete(condition func(rr RaftRecord) bool) int {
 	return n
 }
 
-func (rt *RaftTable) Update(condition func(rr RaftRecord) bool, update func(rr *RaftRecord)) int {
+func (rt *raftTable) Update(condition func(rr RaftRecord) bool, update func(rr *RaftRecord)) int {
 	n := 0
 	for i, rr := range rt.records {
 		if condition(rr) {
@@ -81,10 +92,10 @@ func (rt *RaftTable) Update(condition func(rr RaftRecord) bool, update func(rr *
 	return n
 }
 
-func (rt *RaftTable) GetSnapshot() ([]byte, error) {
+func (rt *raftTable) GetSnapshot() ([]byte, error) {
 	return pkg.Encode(rt.records)
 }
 
-func (rt *RaftTable) RecoverFromSnapshot(snap []byte) error {
+func (rt *raftTable) RecoverFromSnapshot(snap []byte) error {
 	return pkg.Decode(snap, &rt.records)
 }

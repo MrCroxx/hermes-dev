@@ -23,23 +23,26 @@ const (
 var (
 	errRedirect = errors.New("NodeID not exists in this pod, redirect")
 	REDIRECT    = "redirect"
+	INDEX       = "index"
+	UNDIRECTED  = "undirected"
+	LOSTINDEX   = " lost index"
 )
 
-type rpcServer struct {
+type tcpServer struct {
 	url    string
 	core   unit.Core
 	server *tcpx.TcpX
 	mux    sync.Mutex
 }
 
-func NewRPCServer(url string, core unit.Core) RPCServer {
-	return &rpcServer{
+func NewTCPServer(url string, core unit.Core) TCPServer {
+	return &tcpServer{
 		url:  url,
 		core: core,
 	}
 }
 
-func (s *rpcServer) Init() error {
+func (s *tcpServer) Init() error {
 	s.server = tcpx.NewTcpX(tcpx.ProtobufMarshaller{})
 	s.server.OnConnect = s.onConnect
 	s.server.OnClose = s.onClose
@@ -55,20 +58,20 @@ func (s *rpcServer) Init() error {
 	return nil
 }
 
-func (s *rpcServer) Close() {
+func (s *tcpServer) Close() {
 	s.server.Stop(true)
 }
 
-func (s *rpcServer) onConnect(c *tcpx.Context) {
+func (s *tcpServer) onConnect(c *tcpx.Context) {
 
 	log.ZAPSugaredLogger().Debugf("got a new conn : %s .", c.ClientIP())
 }
 
-func (s *rpcServer) onClose(c *tcpx.Context) {
+func (s *tcpServer) onClose(c *tcpx.Context) {
 	log.ZAPSugaredLogger().Debugf("tcp conn closed. %+v", c)
 }
 
-func (s *rpcServer) handleRaft(c *tcpx.Context) {
+func (s *tcpServer) handleRaft(c *tcpx.Context) {
 	var m raftpb.Message
 	_, err := c.BindWithMarshaller(&m, tcpx.JsonMarshaller{})
 	//log.ZAPSugaredLogger().Debugf("%+v", m)
@@ -87,10 +90,11 @@ func (s *rpcServer) handleRaft(c *tcpx.Context) {
 	}
 }
 
-func (s *rpcServer) handleHermesProducer(c *tcpx.Context) {
+func (s *tcpServer) handleHermesProducer(c *tcpx.Context) {
 	var req cmd.HermesProducerCMD
 	var rsp cmd.HermesProducerRSP
 
+	// bind rsp
 	_, err := c.BindWithMarshaller(&req, tcpx.JsonMarshaller{})
 	if err != nil {
 		log.ZAPSugaredLogger().Errorf("Error raised when binding message, err=%s.", err)
@@ -102,29 +106,52 @@ func (s *rpcServer) handleHermesProducer(c *tcpx.Context) {
 		return
 	}
 
-	rsp.NodeID, rsp.PodID = s.core.LookUpLeader(req.ZoneID)
-	if req.NodeID == 0 {
-		req.NodeID = rsp.NodeID
-	}
-	if req.NodeID != rsp.NodeID {
-		s.redirectHermesProducer(c, rsp)
+	// lookup zone leader
+	var leaderID uint64
+	leaderID, rsp.PodID = s.core.LookUpLeader(req.ZoneID)
+	// if zone leader not in this pod, redirect
+	if rsp.PodID != s.core.PodID() {
+		rsp.Err = REDIRECT
+		s.reply(c, &rsp)
 		return
 	}
-	if !s.core.AppendData(req.NodeID, req.TS, req.Data, func(ts int64) {
+	if req.Index == 0 {
+		rsp.Index = s.core.LookUpNextFreshIndex(leaderID)
+		rsp.Err = INDEX
+		s.reply(c, &rsp)
+		return
+	}
+	nIndex := s.core.LookUpNextFreshIndex(leaderID)
+	if nIndex == 0 {
+		rsp.Err = UNDIRECTED
+		s.reply(c, &rsp)
+		return
+	}
+	offset := nIndex - req.Index
+	if offset < 0 {
+		rsp.Err = LOSTINDEX
+		rsp.Index = nIndex
+		s.reply(c, &rsp)
+	}
+	if int(offset) >= len(req.Data) {
+		rsp.TS = req.TS
+		s.reply(c, &rsp)
+		return
+	}
+	if !s.core.AppendData(leaderID, req.TS, req.Data[offset:], func(ts int64) {
 		rsp.TS = ts
-		err = c.ReplyWithMarshaller(tcpx.JsonMarshaller{}, HermesProducerRSPID, rsp)
-		if err != nil {
-			log.ZAPSugaredLogger().Errorf("Error raised when replying client, err=%s.", err)
-		}
+		rsp.Index = nIndex + uint64(len(req.Data[offset:]))
+		s.reply(c, &rsp)
+		return
 	}) {
-		s.redirectHermesProducer(c, rsp)
+		rsp.Err = UNDIRECTED
+		s.reply(c, &rsp)
 		return
 	}
 }
 
-func (s *rpcServer) redirectHermesProducer(c *tcpx.Context, rsp cmd.HermesProducerRSP) {
-	rsp.Err = REDIRECT
-	err := c.ReplyWithMarshaller(tcpx.JsonMarshaller{}, HermesProducerRSPID, rsp)
+func (s *tcpServer) reply(c *tcpx.Context, rsp *cmd.HermesProducerRSP) {
+	err := c.ReplyWithMarshaller(tcpx.JsonMarshaller{}, HermesProducerRSPID, *rsp)
 	if err != nil {
 		log.ZAPSugaredLogger().Errorf("Error raised when replying client, err=%s.", err)
 	}

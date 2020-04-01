@@ -26,7 +26,8 @@ var (
 )
 
 type metaNode struct {
-	rt                   *store.RaftTable
+	core                 unit.Core
+	rt                   store.RaftTable
 	zoneID               uint64
 	nodeID               uint64
 	podID                uint64
@@ -38,13 +39,12 @@ type metaNode struct {
 	snapshotter          *snap.Snapshotter
 	mux                  sync.RWMutex
 	advanceC             chan<- struct{}
-	startDataNode        func(zoneID uint64, nodeID uint64, peers map[uint64]uint64)
 	hbTicker             *time.Ticker
-	nWakeUpTick          uint64
 	raftProcessor        func(ctx context.Context, m raftpb.Message) error
 }
 
 type MetaNodeConfig struct {
+	Core                    unit.Core
 	ZoneID                  uint64
 	NodeID                  uint64
 	PodID                   uint64
@@ -55,7 +55,6 @@ type MetaNodeConfig struct {
 	SnapshotCatchUpEntriesN uint64
 	Transport               transport.Transport
 	DoLeadershipTransfer    func(podID uint64, old uint64, transferee uint64)
-	StartDataNode           func(zoneID uint64, nodeID uint64, peers map[uint64]uint64)
 }
 
 func NewMetaNode(cfg MetaNodeConfig) unit.MetaNode {
@@ -63,14 +62,13 @@ func NewMetaNode(cfg MetaNodeConfig) unit.MetaNode {
 	confchangeC := make(chan raftpb.ConfChange)
 
 	m := &metaNode{
+		core:                 cfg.Core,
 		rt:                   store.NewRaftTable(),
 		zoneID:               cfg.ZoneID,
 		nodeID:               cfg.NodeID,
 		podID:                cfg.PodID,
 		storageDir:           cfg.StorageDir,
 		doLeadershipTransfer: cfg.DoLeadershipTransfer,
-		startDataNode:        cfg.StartDataNode,
-		nWakeUpTick:          3,
 	}
 
 	speers := []uint64{}
@@ -256,59 +254,48 @@ func (m *metaNode) Stop() {
 }
 
 // WakeUp will wake up data nodes that ain't heartbeat for a while.
-func (m *metaNode) WakeUp() {
+func (m *metaNode) OfflineNodes() []store.RaftRecord {
 	log.ZAPSugaredLogger().Debugf("MetaNode.WakeUp is called, waking up dead data nodes in this pod.")
 	m.mux.Lock()
 	defer m.mux.Unlock()
-	for _, rr := range m.rt.Query(func(rr store.RaftRecord) bool {
+	return m.rt.Query(func(rr store.RaftRecord) bool {
 		tdead := time.Now().Add(-time.Second * 30)
 		// TODO : is zero ! if create failed !
 		if rr.ZoneID != m.zoneID && rr.PodID == m.podID && rr.Heartbeat.Before(tdead) && !rr.Heartbeat.IsZero() {
 			return true
 		}
 		return false
-	}) {
-		go m.wakeUpNode(rr)
-	}
+	})
 }
 
-func (m *metaNode) WakeUpNode(nodeID uint64) {
+func (m *metaNode) LookUpZoneRRs(zoneID uint64) []store.RaftRecord {
+	return m.rt.Query(func(prr store.RaftRecord) bool {
+		if prr.ZoneID == zoneID {
+			return true
+		}
+		return false
+	})
+}
+
+func (m *metaNode) LookUpDeadNodeRR(nodeID uint64) (store.RaftRecord, bool) {
 	m.mux.Lock()
 	defer m.mux.Unlock()
-	for _, rr := range m.rt.Query(func(rr store.RaftRecord) bool {
+	rrs := m.rt.Query(func(rr store.RaftRecord) bool {
 		tdead := time.Now().Add(-time.Second * 30)
 		if rr.NodeID == nodeID && rr.Heartbeat.Before(tdead) {
 			return true
 		}
 		return false
-	}) {
-		go m.wakeUpNode(rr)
-	}
-}
-
-func (m *metaNode) wakeUpNode(rr store.RaftRecord) {
-	peerRRs := m.rt.Query(func(prr store.RaftRecord) bool {
-		if prr.ZoneID == rr.ZoneID {
-			return true
-		}
-		return false
 	})
-	peers := make(map[uint64]uint64)
-	for _, prr := range peerRRs {
-		peers[prr.PodID] = prr.NodeID
+	if len(rrs) == 1 {
+		return rrs[0], true
 	}
-	log.ZAPSugaredLogger().Infof("wake up : %d", rr.NodeID)
-	m.startDataNode(rr.ZoneID, rr.NodeID, peers)
+	return store.RaftRecord{}, false
 }
 
 func (m *metaNode) tickHeartbeat() {
 	for _ = range m.hbTicker.C {
 		m.Heartbeat(m.nodeID, nil)
-		m.nWakeUpTick--
-		if m.nWakeUpTick == 0 {
-			m.nWakeUpTick = 10
-			go m.WakeUp()
-		}
 	}
 }
 
@@ -345,7 +332,8 @@ func (m *metaNode) handleMetaCMD(metaCMD cmd.MetaCMD) {
 		if !diz {
 			break
 		}
-		m.startDataNode(zid, nid, peers)
+
+		m.core.StartDataNode(zid, nid, peers)
 
 	case cmd.METACMDTYPE_RAFT_TRANSFER_LEADERATHIP:
 		if time.Now().Before(metaCMD.Time) {

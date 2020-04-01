@@ -37,12 +37,12 @@ type Raft interface {
 	ReportSnapshot(id uint64, status raft.SnapshotStatus)
 }
 
-type RPCServer interface {
+type TCPServer interface {
 	Init() error
 	Close()
 }
 
-type RPCClient interface {
+type TCPClient interface {
 	Send(m raftpb.Message) error
 	Close()
 }
@@ -64,9 +64,9 @@ type transport struct {
 	snapshotter *snap.Snapshotter
 	mux         sync.RWMutex         // RWMutex to maintain maps below
 	npods       map[uint64]uint64    // node id -> pod id
-	clients     map[uint64]RPCClient // pod id -> rpc client
+	clients     map[uint64]TCPClient // pod id -> rpc client
 	nodeSets    map[uint64][]uint64  // pod id -> node ids
-	server      RPCServer
+	server      TCPServer
 	done        chan struct{}
 }
 
@@ -76,14 +76,14 @@ func NewTransport(podID uint64, url string, core unit.Core) Transport {
 		url:      url,
 		nodeSets: make(map[uint64][]uint64),
 		npods:    make(map[uint64]uint64),
-		clients:  make(map[uint64]RPCClient),
+		clients:  make(map[uint64]TCPClient),
 		done:     make(chan struct{}),
 		core:     core,
 	}
 }
 
 func (t *transport) Start() error {
-	t.server = NewRPCServer(t.url, t.core)
+	t.server = NewTCPServer(t.url, t.core)
 	return t.server.Init()
 }
 
@@ -117,7 +117,7 @@ func (t *transport) AddPod(podID uint64, url string) (err error) {
 	if _, exists := t.clients[podID]; exists {
 		return errPodExists(podID)
 	}
-	c := NewRPCClient(url)
+	c := NewTCPClient(url)
 	t.clients[podID] = c
 	t.nodeSets[podID] = []uint64{}
 	return

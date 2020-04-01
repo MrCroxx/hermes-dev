@@ -34,6 +34,7 @@ type pod struct {
 	cfg                     config.HermesConfig      // hermes config for pod constructing
 	ackCs                   map[uint64]<-chan uint64 // node id -> ack signal channel
 	mux                     sync.Mutex
+	wakeTicker              *time.Ticker
 }
 
 func NewPod(
@@ -52,6 +53,7 @@ func NewPod(
 		metaZoneOffset:          cfg.MetaZoneOffset,
 		errC:                    errC,
 		nodes:                   make(map[uint64]unit.DataNode),
+		wakeTicker:              time.NewTicker(time.Second * 30),
 	}
 	p.transport = transport.NewTransport(cfg.PodID, cfg.Pods[cfg.PodID], p)
 
@@ -66,8 +68,33 @@ func NewPod(
 
 	p.connectCluster()
 	p.startMetaNode()
+	go p.wakeTick()
 
 	return p
+}
+
+func (p *pod) wakeTick() {
+	for _ = range p.wakeTicker.C {
+		if p.metaNode == nil {
+			continue
+		}
+		for _, rr := range p.metaNode.OfflineNodes() {
+			go p.wakeUpNode(rr)
+		}
+	}
+}
+
+func (p *pod) wakeUpNode(rr store.RaftRecord) {
+	if p.metaNode == nil {
+		return
+	}
+	peerRRs := p.metaNode.LookUpZoneRRs(rr.ZoneID)
+	peers := make(map[uint64]uint64)
+	for _, prr := range peerRRs {
+		peers[prr.PodID] = prr.NodeID
+	}
+	log.ZAPSugaredLogger().Infof("wake up : %d", rr.NodeID)
+	p.StartDataNode(rr.ZoneID, rr.NodeID, peers)
 }
 
 func (p *pod) Stop() {
@@ -99,7 +126,9 @@ func (p *pod) WakeUpNode(nodeID uint64) {
 	if p.metaNode == nil {
 		return
 	}
-	p.metaNode.WakeUpNode(nodeID)
+	if rr, ok := p.metaNode.LookUpDeadNodeRR(nodeID); ok {
+		p.wakeUpNode(rr)
+	}
 }
 
 func (p *pod) connectCluster() {
@@ -118,6 +147,7 @@ func (p *pod) startMetaNode() {
 	}
 
 	p.metaNode = NewMetaNode(MetaNodeConfig{
+		Core:                    p,
 		ZoneID:                  p.metaZoneOffset,
 		NodeID:                  nodeID,
 		PodID:                   p.podID,
@@ -128,7 +158,6 @@ func (p *pod) startMetaNode() {
 		SnapshotCatchUpEntriesN: p.snapshotCatchUpEntriesN,
 		Transport:               p.transport,
 		DoLeadershipTransfer:    p.doLeadershipTransfer,
-		StartDataNode:           p.startDataNode,
 	})
 	if p.metaNode == nil {
 		log.ZAPSugaredLogger().Fatalf("Failed to create metaNode node.")
@@ -136,7 +165,7 @@ func (p *pod) startMetaNode() {
 	}
 }
 
-func (p *pod) startDataNode(zoneID uint64, nodeID uint64, peers map[uint64]uint64) {
+func (p *pod) StartDataNode(zoneID uint64, nodeID uint64, peers map[uint64]uint64) {
 	p.mux.Lock()
 	defer p.mux.Unlock()
 	d := NewDataNode(DataNodeConfig{
@@ -208,6 +237,8 @@ func (p *pod) InitMetaZone() error {
 	return nil
 }
 
+func (p *pod) PodID() uint64 { return p.podID }
+
 func (p *pod) RaftProcessor(nodeID uint64) func(ctx context.Context, m raftpb.Message) error {
 	if p.metaNode == nil {
 		return nil
@@ -235,4 +266,11 @@ func (p *pod) AppendData(nodeID uint64, ts int64, data []string, callback func(i
 		return true
 	}
 	return false
+}
+
+func (p *pod) LookUpNextFreshIndex(nodeID uint64) uint64 {
+	if d, exists := p.nodes[nodeID]; exists {
+		return d.NextFreshIndex()
+	}
+	return 0
 }

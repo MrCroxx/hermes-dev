@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/fwhezfwhez/tcpx"
 	"mrcroxx.io/hermes/cmd"
+	"mrcroxx.io/hermes/log"
 	"mrcroxx.io/hermes/transport"
 	"net"
 	"time"
@@ -13,28 +14,30 @@ var (
 	errConnNotEstablished = errors.New("conn has not established yet")
 	errTSMissMatch        = errors.New("timestamp miss match")
 	errRedirect           = errors.New("redirect")
+	errSkip               = errors.New("skip")
+	errLostIndex          = errors.New("lost index")
 )
 
-type HermesClient interface {
+type ProducerClient interface {
 	Send(data []string) error
 }
 
-type hermesClient struct {
+type producerClient struct {
 	zoneID uint64
 	podID  uint64
+	index  uint64
 	pods   map[uint64]string
-	nodeID uint64
 	conn   net.Conn
 	packx  *tcpx.Packx
 }
 
-type HermesClientConfig struct {
+type ProducerClientConfig struct {
 	ZoneID uint64            // zone id
 	Pods   map[uint64]string // pod id -> url
 }
 
-func NewHermesClient(cfg HermesClientConfig) HermesClient {
-	c := &hermesClient{
+func NewProducerClient(cfg ProducerClientConfig) ProducerClient {
+	c := &producerClient{
 		zoneID: cfg.ZoneID,
 		pods:   cfg.Pods,
 		podID:  1,
@@ -44,18 +47,23 @@ func NewHermesClient(cfg HermesClientConfig) HermesClient {
 	return c
 }
 
-func (c *hermesClient) Send(data []string) error {
+func (c *producerClient) Send(data []string) error {
+	log.ZAPSugaredLogger().Debugf("push data %d ~ %d", c.index, c.index+uint64(len(data)-1))
+
 	// check connection is established
 	if c.conn == nil {
 		return errConnNotEstablished
 	}
 	// encode message
 	req := cmd.HermesProducerCMD{
-		Type:   cmd.HERMESCMDTYPE_APPEND,
 		ZoneID: c.zoneID,
-		NodeID: c.nodeID,
 		TS:     time.Now().Unix(),
-		Data:   data,
+		Index:  c.index,
+	}
+	skip := true
+	if c.index > 0 {
+		req.Data = data
+		skip = false
 	}
 	buf, err := c.packx.Pack(transport.HermesProducerCMDID, req)
 	if err != nil {
@@ -82,19 +90,26 @@ func (c *hermesClient) Send(data []string) error {
 		go c.tryConn()
 		return err
 	}
+	//log.ZAPSugaredLogger().Debugf("%+v", rsp)
 	if rsp.Err == transport.REDIRECT {
 		c.podID = rsp.PodID
-		c.nodeID = rsp.NodeID
 		go c.tryConn()
 		return errRedirect
+	}
+	c.index = rsp.Index
+	if skip {
+		return errSkip
 	}
 	if rsp.TS != req.TS {
 		return errTSMissMatch
 	}
-	return err
+	if rsp.Err == transport.LOSTINDEX {
+		return errLostIndex
+	}
+	return nil
 }
 
-func (c *hermesClient) tryConn() {
+func (c *producerClient) tryConn() {
 	c.conn = nil
 	var err error
 	for {
