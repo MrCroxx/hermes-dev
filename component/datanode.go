@@ -29,28 +29,30 @@ type DataNodeMetadata struct {
 }
 
 type dataNode struct {
-	core          unit.Core
-	ds            store.DataStore
-	zoneID        uint64
-	nodeID        uint64
-	storageDir    string
-	doLead        func(old uint64)
-	proposeC      chan<- []byte
-	confchangeC   chan<- raftpb.ConfChange
-	snapshotter   *snap.Snapshotter
-	mux           sync.RWMutex
-	advanceC      chan<- struct{}
-	hbTicker      *time.Ticker
-	heartbeat     func(nodeID uint64, extra []byte)
-	peers         map[uint64]uint64
-	transport     transport.Transport
-	ackCallbacks  map[int64]func(ts int64)
-	pushDataURL   string
-	maxPushN      uint64
-	maxCacheN     uint64
-	done          chan struct{}
-	caching       int32
-	persisting    int32
+	core         unit.Core
+	ds           store.DataStore
+	zoneID       uint64
+	nodeID       uint64
+	storageDir   string
+	doLead       func(old uint64)
+	proposeC     chan<- []byte
+	confchangeC  chan<- raftpb.ConfChange
+	snapshotter  *snap.Snapshotter
+	mux          sync.RWMutex
+	advanceC     chan<- struct{}
+	hbTicker     *time.Ticker
+	heartbeat    func(nodeID uint64, extra []byte)
+	peers        map[uint64]uint64
+	transport    transport.Transport
+	ackCallbacks map[int64]func(ts int64)
+	pushDataURL  string
+	maxPersistN  uint64
+	maxPushN     uint64
+	maxCacheN    uint64
+	done         chan struct{}
+	caching      int32
+	persisting   int32
+
 	raftProcessor func(ctx context.Context, m raftpb.Message) error
 }
 
@@ -65,6 +67,7 @@ type DataNodeConfig struct {
 	SnapshotCatchUpEntriesN uint64
 	Transport               transport.Transport
 	PushDataURL             string
+	MaxPersistN             uint64
 	MaxCacheN               uint64
 	MaxPushN                uint64
 	NotifyLeaderShip        func(nodeID uint64)
@@ -95,6 +98,7 @@ func NewDataNode(cfg DataNodeConfig) unit.DataNode {
 		peers:        cfg.Peers,
 		transport:    cfg.Transport,
 		pushDataURL:  cfg.PushDataURL,
+		maxPersistN:  cfg.MaxPersistN,
 		maxPushN:     cfg.MaxPushN,
 		maxCacheN:    cfg.MaxCacheN,
 		done:         make(chan struct{}),
@@ -310,6 +314,11 @@ func (d *dataNode) pushData() (n uint64, ack uint64) {
 	return n, rsp.ACK
 }
 
+func (d *dataNode) pushFile(index uint64) error {
+	//data :=
+	return nil
+}
+
 func (d *dataNode) handleDataCMD(dataCMD cmd.DataCMD) {
 	switch dataCMD.Type {
 	case cmd.DATACMDTYPE_APPEND:
@@ -328,6 +337,7 @@ func (d *dataNode) handleDataCMD(dataCMD cmd.DataCMD) {
 
 func (d *dataNode) persist(n uint64) {
 	n, err := d.ds.Persist(n)
+	go d.ds.CleanBlockFiles(d.maxPersistN)
 	if err == nil {
 		d.mux.Lock()
 		d.ds.DeleteCache(n)
@@ -336,6 +346,22 @@ func (d *dataNode) persist(n uint64) {
 		log.ZAPSugaredLogger().Errorf("Error raised when persisting data, err=%s.", err)
 	}
 	atomic.StoreInt32(&d.persisting, 0)
+}
+
+func (d *dataNode) replay(index uint64) {
+	// mux lock
+	di, pi, ci, _ := d.ds.Indexes()
+	if index <= di {
+		return
+	} else if index <= pi {
+
+		d.ds.Uncache(pi + 1)
+	} else if index <= ci {
+		d.ds.Uncache(index)
+	} else {
+		return
+	}
+	// mux unlock
 }
 
 func (d *dataNode) propose(cmd cmd.DataCMD) {

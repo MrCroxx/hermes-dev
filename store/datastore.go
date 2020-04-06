@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"mrcroxx.io/hermes/log"
 	"mrcroxx.io/hermes/pkg"
 	"os"
 	"path"
@@ -17,12 +18,14 @@ var (
 )
 
 type DataStore interface {
-	Get(n uint64) ([]string, uint64)  // get data <- * fresh data
-	Append(vs []string) uint64        // append data -> fresh data *
-	Cache(n uint64) uint64            // cache data <- * fresh data
-	Persist(n uint64) (uint64, error) // persist data <- * cache data
-	DeleteCache(n uint64)             // delete data <- * cache data
-	CleanBlockFiles(nremain uint64)   // delete block file
+	Get(n uint64) ([]string, uint64)        // get data <- * fresh data
+	Append(vs []string) uint64              // append data -> fresh data *
+	Cache(n uint64) uint64                  // cache data <- * fresh data
+	Uncache(index uint64)                   // cache data -> fresh data
+	Persist(n uint64) (uint64, error)       // persist data <- * cache data
+	DeleteCache(n uint64)                   // delete data <- * cache data
+	CleanBlockFiles(nremain uint64)         // delete block file
+	ReadStorage(index uint64) <-chan string // persist data -> memory
 	GetSnapshot() ([]byte, error)
 	RecoverFromSnapshot([]byte) error
 	Indexes() (deletedIndex uint64, persistedIndex uint64, cachedIndex uint64, freshIndex uint64)
@@ -78,6 +81,15 @@ func (ds *dataStore) Cache(n uint64) uint64 {
 	return n
 }
 
+func (ds *dataStore) Uncache(index uint64) {
+	if index > ds.CachedIndex {
+		return
+	}
+	offset := index - (ds.PersistedIndex + 1)
+	ds.FreshData = append(ds.CachedData[offset:], ds.FreshData...)
+	ds.CachedIndex = index - 1
+}
+
 func (ds *dataStore) Persist(n uint64) (uint64, error) {
 	if uint64(len(ds.CachedData)) < n {
 		return 0, errOutOfRange
@@ -98,13 +110,35 @@ func (ds *dataStore) DeleteCache(n uint64) {
 	ds.PersistedIndex += n
 }
 
+func (ds *dataStore) ReadStorage(index uint64) <-chan string {
+	c := make(chan string)
+	go ds.loadStorage(index, c)
+	return c
+}
+
+func (ds *dataStore) loadStorage(index uint64, c chan<- string) {
+	//fs := ds.listBlockFiles()
+
+	//for _, f := range fs {
+	//	s, t, b := ds.decodeBlockFileName(f)
+	//	if !b {
+	//		continue
+	//	}
+	//}
+	close(c)
+}
+
 func (ds *dataStore) Indexes() (deletedIndex uint64, persistedIndex uint64, cachedIndex uint64, freshIndex uint64) {
 	return ds.DeletedIndex, ds.PersistedIndex, ds.CachedIndex, ds.FreshIndex
 }
 
 func (ds *dataStore) CleanBlockFiles(nremain uint64) {
 	fs := ds.listBlockFiles()
+	if ds.PersistedIndex <= nremain {
+		return
+	}
 	deleteIndex := ds.PersistedIndex - nremain
+
 	firstRemainIndex := deleteIndex
 	for _, f := range fs {
 		s, t, b := ds.decodeBlockFileName(f)
@@ -121,7 +155,9 @@ func (ds *dataStore) CleanBlockFiles(nremain uint64) {
 			}
 		}
 	}
-	ds.DeletedIndex = firstRemainIndex - 1
+	if firstRemainIndex > 0 {
+		ds.DeletedIndex = firstRemainIndex - 1
+	}
 }
 
 func (ds *dataStore) listBlockFiles() []string {
@@ -144,10 +180,11 @@ func (ds *dataStore) listBlockFiles() []string {
 }
 
 func (ds *dataStore) encodeBlockFileName(s uint64, n int) string {
-	return fmt.Sprintf("%x-%x%s", s, s+uint64(n), ext)
+	return fmt.Sprintf("%016x-%016x%s", s, s+uint64(n), ext)
 }
 
 func (ds *dataStore) decodeBlockFileName(p string) (uint64, uint64, bool) {
+	log.ZAPSugaredLogger().Debugf("decoding .blk file : %s", p)
 	info, err := os.Stat(p)
 	if err != nil || info.IsDir() || path.Ext(p) != ext {
 		return 0, 0, false
@@ -160,11 +197,11 @@ func (ds *dataStore) decodeBlockFileName(p string) (uint64, uint64, bool) {
 	if len(ids) != 2 {
 		return 0, 0, false
 	}
-	x, err := strconv.ParseUint(ids[0], 10, 64)
+	x, err := strconv.ParseUint(ids[0], 16, 64)
 	if err != nil {
 		return 0, 0, false
 	}
-	y, err := strconv.ParseUint(ids[1], 10, 64)
+	y, err := strconv.ParseUint(ids[1], 16, 64)
 	if err != nil {
 		return 0, 0, false
 	}
