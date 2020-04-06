@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"mrcroxx.io/hermes/log"
 	"mrcroxx.io/hermes/pkg"
 	"os"
 	"path"
@@ -88,7 +89,9 @@ func (ds *dataStore) Uncache(index uint64) {
 		return
 	}
 	offset := index - (ds.PersistedIndex + 1)
+	log.ZAPSugaredLogger().Debugf("Uncache %d data", len(ds.CachedData[offset:]))
 	ds.FreshData = append(ds.CachedData[offset:], ds.FreshData...)
+	ds.CachedData = ds.CachedData[:offset]
 	ds.CachedIndex = index - 1
 }
 

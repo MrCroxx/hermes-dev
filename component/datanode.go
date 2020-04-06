@@ -303,6 +303,9 @@ func (d *dataNode) startPersisting() {
 			}
 			nc := ci - pi
 			if nc <= d.maxCacheN {
+				d.mux.Lock()
+				d.status.PERSIST = true
+				d.mux.Unlock()
 				continue
 			}
 			n := nc - d.maxCacheN
@@ -321,7 +324,7 @@ func (d *dataNode) pushFreshData() (n uint64, ack uint64) {
 	d.mux.Lock()
 	_, _, fi, _ := d.ds.Indexes()
 	fi++
-	data, n := d.ds.Get(d.maxPushN)
+	data, _ := d.ds.Get(d.maxPushN)
 	d.mux.Unlock()
 	return d.pushData(fi, data)
 }
@@ -359,7 +362,7 @@ func (d *dataNode) pushData(fi uint64, data []string) (n uint64, ack uint64) {
 		log.ZAPSugaredLogger().Errorf("Error raised when unmarshalling HermesConsumerRSP, err=%s.", err)
 		return 0, 0
 	}
-	return n, rsp.ACK
+	return uint64(len(data)), rsp.ACK
 }
 
 func (d *dataNode) handleDataCMD(dataCMD cmd.DataCMD) {
@@ -439,14 +442,13 @@ func (d *dataNode) replay(index uint64) {
 	log.ZAPSugaredLogger().Debugf("Start replay")
 	d.mux.Lock()
 
-	di, pi, ci, _ := d.ds.Indexes()
-	log.ZAPSugaredLogger().Debugf("[ %d %d %d ]", di, pi, ci)
+	di, pi, ci, fi := d.ds.Indexes()
+	log.ZAPSugaredLogger().Debugf("[ %d %d %d %d ]", di, pi, ci,fi)
 
 	if index <= di {
 		return
 	} else if index <= pi {
-		leaderID, _ := d.core.LookUpLeader(d.zoneID)
-		if leaderID == d.nodeID {
+		if d.checkLeadership() {
 			c := d.ds.ReadStorage(index)
 			buffer := []string{}
 			for s := range c {
@@ -457,6 +459,8 @@ func (d *dataNode) replay(index uint64) {
 		d.ds.Uncache(pi + 1)
 	} else if index <= ci {
 		d.ds.Uncache(index)
+		di, pi, ci, fi := d.ds.Indexes()
+		log.ZAPSugaredLogger().Debugf("[ %d %d %d %d ]", di, pi, ci,fi)
 	} else {
 		return
 	}
