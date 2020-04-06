@@ -17,7 +17,6 @@ import (
 	"path"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -26,6 +25,23 @@ type DataNodeMetadata struct {
 	PersistedIndex uint64 `json:"PersistedIndex"`
 	CachedIndex    uint64 `json:"CachedIndex"`
 	FreshIndex     uint64 `json:"FreshIndex"`
+}
+
+type DataNodeSnapshot struct {
+	Status            Status
+	DataStoreSnapshot []byte
+}
+
+type MUXTYPE int
+
+const (
+	MUX_PUSH MUXTYPE = iota
+	MUX_PERSIST
+)
+
+type Status struct {
+	PUSH    bool
+	PERSIST bool
 }
 
 type dataNode struct {
@@ -50,8 +66,9 @@ type dataNode struct {
 	maxPushN     uint64
 	maxCacheN    uint64
 	done         chan struct{}
-	caching      int32
-	persisting   int32
+	//caching      int32
+	//persisting   int32
+	status Status
 
 	raftProcessor func(ctx context.Context, m raftpb.Message) error
 }
@@ -103,8 +120,9 @@ func NewDataNode(cfg DataNodeConfig) unit.DataNode {
 		maxCacheN:    cfg.MaxCacheN,
 		done:         make(chan struct{}),
 		ackCallbacks: make(map[int64]func(int64)),
-		caching:      0,
-		persisting:   0,
+		//caching:      0,
+		//persisting:   0,
+		status: Status{PUSH: true, PERSIST: true},
 	}
 
 	speers := []uint64{}
@@ -214,6 +232,14 @@ func (d *dataNode) proposePersist(n uint64) {
 	})
 }
 
+func (d *dataNode) ProposeReplay(index uint64) {
+	d.propose(cmd.DataCMD{
+		Type: cmd.DATACMDTYPE_REPLAY,
+		N:    index,
+		Time: time.Now().Add(time.Second * 10),
+	})
+}
+
 func (d *dataNode) RegisterACKCallback(ts int64, callback func(ts int64)) {
 	d.mux.Lock()
 	defer d.mux.Unlock()
@@ -230,14 +256,24 @@ func (d *dataNode) startPushing() {
 		case <-d.done:
 			return
 		default:
-			if !d.checkLeadership() || atomic.LoadInt32(&d.caching) == 1 {
+			if !d.checkLeadership() {
 				continue
 			}
-			n, ack := d.pushData()
+			//d.acquire(MUX_PUSH)
+			flag := false
+			d.mux.Lock()
+			if d.status.PUSH {
+				d.status.PUSH = false
+				flag = true
+			}
+			d.mux.Unlock()
+			if !flag {
+				continue
+			}
+			n, ack := d.pushFreshData()
 			if ack == 0 {
 				continue
 			}
-			atomic.StoreInt32(&d.caching, 1)
 			d.proposeCache(n)
 		}
 	}
@@ -250,18 +286,26 @@ func (d *dataNode) startPersisting() {
 		case <-d.done:
 			return
 		default:
-			if !d.checkLeadership() || atomic.LoadInt32(&d.persisting) == 1 {
+			if !d.checkLeadership() {
 				continue
 			}
+			//d.acquire(MUX_PERSIST)
+			flag := false
 			d.mux.Lock()
 			_, pi, ci, _ := d.ds.Indexes()
+			if d.status.PERSIST {
+				d.status.PERSIST = false
+				flag = true
+			}
 			d.mux.Unlock()
+			if !flag {
+				continue
+			}
 			nc := ci - pi
 			if nc <= d.maxCacheN {
 				continue
 			}
 			n := nc - d.maxCacheN
-			atomic.StoreInt32(&d.persisting, 1)
 			d.proposePersist(n)
 		}
 	}
@@ -272,13 +316,17 @@ func (d *dataNode) checkLeadership() bool {
 	return nid == d.nodeID
 }
 
-// pushData push fresh data (less than MaxPushN) to consumer and returns number of pushed fresh data ahead to cache and ack to seek next push index.
-func (d *dataNode) pushData() (n uint64, ack uint64) {
+// pushFreshData push fresh data (less than MaxPushN) to consumer and returns number of pushed fresh data ahead to cache and ack to seek next push index.
+func (d *dataNode) pushFreshData() (n uint64, ack uint64) {
 	d.mux.Lock()
 	_, _, fi, _ := d.ds.Indexes()
 	fi++
 	data, n := d.ds.Get(d.maxPushN)
 	d.mux.Unlock()
+	return d.pushData(fi, data)
+}
+
+func (d *dataNode) pushData(fi uint64, data []string) (n uint64, ack uint64) {
 	bs, err := json.Marshal(cmd.HermesConsumerCMD{
 		ZoneID:     d.zoneID,
 		FirstIndex: fi,
@@ -314,11 +362,6 @@ func (d *dataNode) pushData() (n uint64, ack uint64) {
 	return n, rsp.ACK
 }
 
-func (d *dataNode) pushFile(index uint64) error {
-	//data :=
-	return nil
-}
-
 func (d *dataNode) handleDataCMD(dataCMD cmd.DataCMD) {
 	switch dataCMD.Type {
 	case cmd.DATACMDTYPE_APPEND:
@@ -329,9 +372,13 @@ func (d *dataNode) handleDataCMD(dataCMD cmd.DataCMD) {
 		}
 	case cmd.DATACMDTYPE_CACHE:
 		d.ds.Cache(dataCMD.N)
-		atomic.StoreInt32(&d.caching, 0)
+		d.status.PUSH = true
 	case cmd.DATACMDTYPE_PERSIST:
 		go d.persist(dataCMD.N)
+	case cmd.DATACMDTYPE_REPLAY:
+		if time.Now().Before(dataCMD.Time) {
+			go d.replay(dataCMD.N)
+		}
 	}
 }
 
@@ -345,23 +392,79 @@ func (d *dataNode) persist(n uint64) {
 	} else {
 		log.ZAPSugaredLogger().Errorf("Error raised when persisting data, err=%s.", err)
 	}
-	atomic.StoreInt32(&d.persisting, 0)
+	d.mux.Lock()
+	d.status.PERSIST = true
+	d.mux.Unlock()
 }
 
+func (d *dataNode) acquire(t MUXTYPE) {
+	switch t {
+	case MUX_PUSH:
+		for {
+			time.Sleep(time.Millisecond * 10)
+			flag := false
+			d.mux.Lock()
+			if d.status.PUSH {
+				flag = true
+				d.status.PUSH = false
+			}
+			d.mux.Unlock()
+			if flag {
+				break
+			}
+		}
+	case MUX_PERSIST:
+		for {
+			time.Sleep(time.Millisecond * 10)
+			flag := false
+			d.mux.Lock()
+			if d.status.PERSIST {
+				flag = true
+				d.status.PERSIST = false
+			}
+			d.mux.Unlock()
+			if flag {
+				break
+			}
+		}
+	}
+}
+
+// replay should run in a new goroutine
 func (d *dataNode) replay(index uint64) {
-	// mux lock
+	log.ZAPSugaredLogger().Debugf("Acquiring mux push")
+	d.acquire(MUX_PUSH)
+	log.ZAPSugaredLogger().Debugf("Acquiring mux persist")
+	d.acquire(MUX_PERSIST)
+	log.ZAPSugaredLogger().Debugf("Start replay")
+	d.mux.Lock()
+
 	di, pi, ci, _ := d.ds.Indexes()
+	log.ZAPSugaredLogger().Debugf("[ %d %d %d ]", di, pi, ci)
+
 	if index <= di {
 		return
 	} else if index <= pi {
-
+		leaderID, _ := d.core.LookUpLeader(d.zoneID)
+		if leaderID == d.nodeID {
+			c := d.ds.ReadStorage(index)
+			buffer := []string{}
+			for s := range c {
+				buffer = append(buffer, s)
+			}
+			d.pushData(index, buffer)
+		}
 		d.ds.Uncache(pi + 1)
 	} else if index <= ci {
 		d.ds.Uncache(index)
 	} else {
 		return
 	}
-	// mux unlock
+
+	d.status.PUSH = true
+	d.status.PERSIST = true
+	d.mux.Unlock()
+	log.ZAPSugaredLogger().Debugf("Finish replay")
 }
 
 func (d *dataNode) propose(cmd cmd.DataCMD) {
@@ -422,11 +525,24 @@ func (d *dataNode) readCommits(commitC <-chan *[]byte, errorC <-chan error) {
 func (d *dataNode) getSnapshot() ([]byte, error) {
 	d.mux.Lock()
 	defer d.mux.Unlock()
-	return d.ds.GetSnapshot()
+	ds, err := d.ds.GetSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	return pkg.Encode(&DataNodeSnapshot{
+		Status:            d.status,
+		DataStoreSnapshot: ds,
+	})
 }
 
 func (d *dataNode) recoverFromSnapshot(snap []byte) error {
 	d.mux.Lock()
 	defer d.mux.Unlock()
-	return d.ds.RecoverFromSnapshot(snap)
+	var dns DataNodeSnapshot
+	err := pkg.Decode(snap, &dns)
+	if err != nil {
+		return err
+	}
+	d.status = dns.Status
+	return d.ds.RecoverFromSnapshot(dns.DataStoreSnapshot)
 }

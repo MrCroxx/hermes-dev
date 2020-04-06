@@ -122,6 +122,13 @@ func (p *pod) TransferLeadership(zoneID uint64, nodeID uint64) error {
 	return p.metaNode.TransferLeadership(zoneID, nodeID)
 }
 
+func (p *pod) ReplayDataZone(zoneID uint64, index uint64) {
+	if p.metaNode == nil {
+		return
+	}
+	p.metaNode.ProposeNotifyReplayDataZone(zoneID, index)
+}
+
 func (p *pod) WakeUpNode(nodeID uint64) {
 	if p.metaNode == nil {
 		return
@@ -274,4 +281,11 @@ func (p *pod) LookUpNextFreshIndex(nodeID uint64) uint64 {
 		return d.NextFreshIndex()
 	}
 	return 0
+}
+
+func (p *pod) NotifyReplayDataZone(zoneID uint64, index uint64) {
+	leaderID, _ := p.LookUpLeader(zoneID)
+	if d, exists := p.nodes[leaderID]; exists {
+		d.ProposeReplay(index)
+	}
 }
