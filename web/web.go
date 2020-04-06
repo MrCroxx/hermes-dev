@@ -28,6 +28,7 @@ func (w *webUI) Start() {
 	http.HandleFunc("/cmd/init", w.serverInit)
 	http.HandleFunc("/cmd/transfer-leadership", w.serverTransferLeadership)
 	http.HandleFunc("/cmd/add-data-zone", w.serverAddDataZone)
+	http.HandleFunc("/cmd/replay-data-zone", w.serverReplayDataZone)
 	err := http.ListenAndServe(fmt.Sprintf(":%d", w.port), nil)
 	if err != nil {
 		log.ZAPSugaredLogger().Fatalf("Error raised when serving http, err=%s.", err)
@@ -146,6 +147,35 @@ func (w *webUI) serverAddDataZone(rsp http.ResponseWriter, req *http.Request) {
 		http.Error(rsp, "internal server error", http.StatusInternalServerError)
 		return
 	}
+	_, err = fmt.Fprintf(rsp, "ok")
+	if err != nil {
+		log.ZAPSugaredLogger().Error(err)
+		http.Error(rsp, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+}
+
+func (w *webUI) serverReplayDataZone(rsp http.ResponseWriter, req *http.Request) {
+	if req.Method != "POST" {
+		http.Error(rsp, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	body, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		log.ZAPSugaredLogger().Error(err)
+		http.Error(rsp, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	var r struct {
+		ZoneID uint64
+		Index  uint64
+	}
+	if err := json.Unmarshal(body, &r); err != nil {
+		log.ZAPSugaredLogger().Error(err)
+		http.Error(rsp, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.pod.ReplayDataZone(r.ZoneID, r.Index)
 	_, err = fmt.Fprintf(rsp, "ok")
 	if err != nil {
 		log.ZAPSugaredLogger().Error(err)

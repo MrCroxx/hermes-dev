@@ -1,13 +1,16 @@
 package store
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"mrcroxx.io/hermes/log"
 	"mrcroxx.io/hermes/pkg"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -86,7 +89,9 @@ func (ds *dataStore) Uncache(index uint64) {
 		return
 	}
 	offset := index - (ds.PersistedIndex + 1)
+	log.ZAPSugaredLogger().Debugf("Uncache %d data", len(ds.CachedData[offset:]))
 	ds.FreshData = append(ds.CachedData[offset:], ds.FreshData...)
+	ds.CachedData = ds.CachedData[:offset]
 	ds.CachedIndex = index - 1
 }
 
@@ -117,14 +122,58 @@ func (ds *dataStore) ReadStorage(index uint64) <-chan string {
 }
 
 func (ds *dataStore) loadStorage(index uint64, c chan<- string) {
-	//fs := ds.listBlockFiles()
-
-	//for _, f := range fs {
-	//	s, t, b := ds.decodeBlockFileName(f)
-	//	if !b {
-	//		continue
-	//	}
-	//}
+	fs := ds.listBlockFiles()
+	type STF struct {
+		s uint64
+		t uint64
+		f string
+	}
+	stfs := []STF{}
+	for _, f := range fs {
+		s, t, b := ds.decodeBlockFileName(f)
+		if !b {
+			continue
+		}
+		stfs = append(stfs, STF{
+			s: s,
+			t: t,
+			f: f,
+		})
+	}
+	sort.Slice(stfs, func(i, j int) bool {
+		if stfs[i].s == stfs[j].s {
+			return stfs[i].t > stfs[j].t
+		}
+		return stfs[i].s < stfs[j].s
+	})
+	now := index
+	for _, stf := range stfs {
+		if stf.t <= now {
+			continue
+		}
+		f, err := os.Open(stf.f)
+		if err != nil {
+			continue
+		}
+		r := bufio.NewReader(f)
+		offset := uint64(0)
+		if now > stf.s {
+			offset = now - stf.s
+		}
+		fi := uint64(0)
+		for {
+			l, _, err := r.ReadLine()
+			if err == io.EOF {
+				break
+			}
+			fi++
+			if fi > offset {
+				c <- string(l)
+			}
+		}
+		now = stf.t
+		f.Close()
+	}
 	close(c)
 }
 
@@ -184,7 +233,7 @@ func (ds *dataStore) encodeBlockFileName(s uint64, n int) string {
 }
 
 func (ds *dataStore) decodeBlockFileName(p string) (uint64, uint64, bool) {
-	log.ZAPSugaredLogger().Debugf("decoding .blk file : %s", p)
+	//log.ZAPSugaredLogger().Debugf("decoding .blk file : %s", p)
 	info, err := os.Stat(p)
 	if err != nil || info.IsDir() || path.Ext(p) != ext {
 		return 0, 0, false

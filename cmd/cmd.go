@@ -17,11 +17,13 @@ const (
 	METACMDTYPE_RAFT_NOTIFY_LEADERSHIP
 	METACMDTYPE_RAFT_TRANSFER_LEADERATHIP
 	METACMDTYPE_NODE_HEARTBEAT
+	METACMDTYPE_DATA_REPLAY
 )
 const (
 	DATACMDTYPE_APPEND DATACMDTYPE = iota
 	DATACMDTYPE_CACHE
 	DATACMDTYPE_PERSIST
+	DATACMDTYPE_REPLAY
 )
 
 type MetaCMD struct {
@@ -31,6 +33,7 @@ type MetaCMD struct {
 	NodeID    uint64
 	PodID     uint64
 	OldNodeID uint64
+	N         uint64
 	Time      time.Time
 	Extra     []byte
 }
@@ -40,6 +43,7 @@ type DataCMD struct {
 	Data []string
 	TS   int64
 	N    uint64
+	Time time.Time
 }
 
 type HermesProducerCMD struct {
@@ -50,10 +54,10 @@ type HermesProducerCMD struct {
 }
 
 type HermesProducerRSP struct {
-	Err    string // error
-	TS     int64
-	PodID  uint64 // pod id for leader node now
-	Index  uint64
+	Err   string // error
+	TS    int64
+	PodID uint64 // pod id for leader node now
+	Index uint64
 }
 
 type HermesConsumerCMD struct {

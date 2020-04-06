@@ -217,6 +217,15 @@ func (m *metaNode) NotifyLeadership(nodeID uint64) {
 	})
 }
 
+func (m *metaNode) ProposeNotifyReplayDataZone(zoneID uint64, index uint64) {
+	m.propose(cmd.MetaCMD{
+		Type:   cmd.METACMDTYPE_DATA_REPLAY,
+		ZoneID: zoneID,
+		N:      index,
+		Time:   time.Now().Add(time.Second * 10),
+	})
+}
+
 func (m *metaNode) Heartbeat(nodeID uint64, extra []byte) {
 	m.propose(cmd.MetaCMD{
 		Type:   cmd.METACMDTYPE_NODE_HEARTBEAT,
@@ -370,6 +379,10 @@ func (m *metaNode) handleMetaCMD(metaCMD cmd.MetaCMD) {
 				}
 			},
 		)
+	case cmd.METACMDTYPE_DATA_REPLAY:
+		if time.Now().Before(metaCMD.Time) {
+			go m.core.NotifyReplayDataZone(metaCMD.ZoneID, metaCMD.N)
+		}
 	}
 }
 

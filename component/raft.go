@@ -256,9 +256,14 @@ func (re *raftEngine) replayWAL() *wal.WAL {
 	re.storage.Append(ents)
 
 	// send nil once lastIndex is published so client knows commit channel is current
+
+	// trigger state machine load its snapshot
 	if len(ents) > 0 {
 		re.lastIndex = ents[len(ents)-1].Index
 	}
+	//else {
+	//	re.lastIndex = snapshot.Metadata.Index // TODO : ???????????
+	//}
 	// TODO : ???????
 	re.commitC <- nil
 	log.ZAPSugaredLogger().Debugf("Trigger nil")
@@ -341,7 +346,6 @@ func (re *raftEngine) maybeTriggerSnapshot() {
 		log.ZAPSugaredLogger().Fatalf("Error raised when getting snapshot, err=%s.", err)
 		panic(err)
 	}
-	// TODO : 线程安全 ???
 	snapshot, err := re.storage.CreateSnapshot(re.appliedIndex, &re.confState, data)
 	if err != nil {
 		log.ZAPSugaredLogger().Fatalf("Error raised when creating snapshot, err=%s.", err)

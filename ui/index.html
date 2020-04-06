@@ -30,6 +30,7 @@
                     </el-menu-item-group>
                     <el-menu-item-group title="data zone">
                         <el-menu-item index="add-data-zone"><i class="el-icon-plus"></i>Add Data Zone</el-menu-item>
+                        <el-menu-item index="replay-data-zone"><i class="el-icon-refresh-left"></i>Replay Data Zone</el-menu-item>
                     </el-menu-item-group>
                 </el-submenu>
 
@@ -194,6 +195,32 @@
                     </el-row>
                 </el-main>
             </template>
+            <template v-if="tab=='replay-data-zone'">
+                <el-header>
+                    <h1>Replay Data Zone</h1>
+                </el-header>
+                <el-main>
+                    <el-row>
+                        <el-col>
+                            <el-card class="form-cmd">
+                                <el-form ref="rdz" :model="rdz" label-width="140px" :rules="rdzRules">
+                                    <el-form-item prop="ZoneID" label="Zone ID">
+                                        <el-select v-model.number="rdz.ZoneID" class="input-id" placeholder="Please select a zone">
+                                            <el-option v-for="zid in zoneIDs()" :label="zid" :value="zid"></el-option>
+                                        </el-select>
+                                    </el-form-item>
+                                    <el-form-item prop="Index" label="Index">
+                                        <el-input v-model.number="rdz.Index" class="input-id" placeholder="Please input Index"></el-input>
+                                    </el-form-item>
+                                    <el-form-item>
+                                        <el-button type="primary" @click="submitRDZ">Submit</el-button>
+                                    </el-form-item>
+                                </el-form>
+                            </el-card>
+                        </el-col>
+                    </el-row>
+                </el-main>
+            </template>
         </el-container>
     </el-container>
 </div>
@@ -230,6 +257,7 @@
                     metazone: [],
                     tl: null,
                     adz: null,
+                    rdz: null,
                     tlRules: {
                         ZoneID: [
                             {required: true, trigger: "change"}
@@ -247,6 +275,15 @@
                         RC: [
                             {validator: validateRC, trigger: "change"}
                         ],
+                    },
+                    rdzRules: {
+                        ZoneID: [
+                            {required: true, trigger: "change"}
+                        ],
+                        Index: [
+                            {required: true, trigger: "change"},
+                            {type: "number", trigger: "change"}
+                        ]
                     },
                     validateNode: validateNode,
                 }
@@ -273,7 +310,13 @@
                                 Nodes: [],
                             };
                             this.$nextTick(() => this.clearValidate('adz'));
-
+                            break;
+                        case "replay-data-zone":
+                            this.rdz = {
+                                ZoneID: null,
+                                Index: null,
+                            };
+                            this.$nextTick(() => this.clearValidate('rdz'));
                             break;
                     }
                 },
@@ -333,6 +376,18 @@
                 submitADZ() {
                     axios
                         .post("/cmd/add-data-zone", this.adz)
+                        .then(response => {
+                            this.tab = 'overview';
+                            this.$message({
+                                message: 'success',
+                                type: 'success',
+                            });
+                        })
+                        .catch(this.alertError)
+                },
+                submitRDZ() {
+                    axios
+                        .post("/cmd/replay-data-zone", this.rdz)
                         .then(response => {
                             this.tab = 'overview';
                             this.$message({
