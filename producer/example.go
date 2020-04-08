@@ -8,7 +8,7 @@ import (
 
 func useClient() {
 	c := client.NewProducerClient(client.ProducerClientConfig{
-		ZoneID: 2,
+		ZoneID: 1,
 		Pods: map[uint64]string{
 			1: "127.0.0.1:14401",
 			2: "127.0.0.1:14402",

@@ -66,8 +66,6 @@ type dataNode struct {
 	maxPushN     uint64
 	maxCacheN    uint64
 	done         chan struct{}
-	//caching      int32
-	//persisting   int32
 	status Status
 
 	raftProcessor func(ctx context.Context, m raftpb.Message) error
@@ -153,7 +151,7 @@ func NewDataNode(cfg DataNodeConfig) unit.DataNode {
 	d.doLead = re.DoLead
 	d.snapshotter = <-re.SnapshotterReadyC
 	d.advanceC = re.AdvanceC
-	d.hbTicker = time.NewTicker(time.Second * 3)
+	d.hbTicker = time.NewTicker(time.Second * 1)
 
 	go d.readCommits(re.CommitC, re.ErrorC)
 	go d.tickHeartbeat()

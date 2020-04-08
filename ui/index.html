@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>Hermes WebUI</title>
     <link rel="stylesheet" type="text/css" href="/static/css/element.css"/>
+    <link rel="stylesheet" type="text/css" href="/static/css/metricsgraphics.css"/>
     <link rel="stylesheet" type="text/css" href="/static/css/hermes.css"/>
 </head>
 <body>
@@ -77,10 +78,12 @@
                                 <h2>Data Zones</h2>
                             </el-col>
                         </el-row>
-                        <el-row>
-                            <el-col>
-                                <template v-for="(v,k,i) in datazones">
-                                    <h3>ZoneID : {{k}}</h3>
+
+                        <template v-for="(v,k,i) in datazones">
+                            <h3>ZoneID : {{k}}</h3>
+
+                            <el-row>
+                                <el-col>
                                     <el-table :data="v"
                                               :row-class-name="isDead"
                                               :default-sort="{prop:'NodeID'}">
@@ -94,9 +97,40 @@
                                         <el-table-column prop="Fresh" label="Fresh[Index]"></el-table-column>
                                         <el-table-column prop="HeartbeatStr" label="Heartbeat"></el-table-column>
                                     </el-table>
-                                </template>
-                            </el-col>
-                        </el-row>
+                                </el-col>
+                            </el-row>
+
+                            <el-row>
+                                <el-col>
+                                    <el-card class="metrics-card">
+                                        <el-collapse v-model="metrics_collapse[k]">
+                                            <el-collapse-item :name="k.toString()">
+                                                <template slot="title">
+                                                    <b><i style="font-size:20px" class="el-icon-s-marketing"></i>Metrics</b>
+                                                </template>
+                                                <el-row v-if="metricsV(k)">
+                                                    <el-col class="metrics" :xs="24" :sm="24" :md="24" :lg="8" :xl="8">
+                                                        <div :id="'metric-acc-'+k.toString()"></div>
+                                                        <div :id="'legend-acc-'+k.toString()"></div>
+                                                    </el-col>
+                                                    <el-col class="metrics" :xs="24" :sm="24" :md="24" :lg="8" :xl="8">
+                                                        <div :id="'metric-index-'+k.toString()"></div>
+                                                        <div :id="'legend-index-'+k.toString()"></div>
+                                                    </el-col>
+                                                    <el-col class="metrics" :xs="24" :sm="24" :md="24" :lg="8" :xl="8">
+                                                        <div :id="'metric-size-'+k.toString()"></div>
+                                                        <div :id="'legend-size-'+k.toString()"></div>
+                                                    </el-col>
+                                                </el-row>
+                                            </el-collapse-item>
+                                        </el-collapse>
+                                    </el-card>
+
+                                </el-col>
+                            </el-row>
+
+                        </template>
+
                     </template>
                     <template v-else>
                         <el-row>
@@ -206,7 +240,7 @@
                                 <el-form ref="rdz" :model="rdz" label-width="140px" :rules="rdzRules">
                                     <el-form-item prop="ZoneID" label="Zone ID">
                                         <el-select v-model.number="rdz.ZoneID" class="input-id" placeholder="Please select a zone">
-                                            <el-option v-for="zid in zoneIDs()" :label="zid" :value="zid"></el-option>
+                                            <el-option v-for="zid in dataZoneIDs()" :label="zid" :value="zid"></el-option>
                                         </el-select>
                                     </el-form-item>
                                     <el-form-item prop="Index" label="Index">
@@ -228,278 +262,9 @@
 <script src="/static/js/vue-resource.js"></script>
 <script src="/static/js/element.js"></script>
 <script src="/static/js/axios.js"></script>
-<script>
-    window.onload = function () {
-        var app = new Vue({
-            el: '#app',
-            data() {
-                let validateZoneIDNotExists = (rule, value, callback) => {
-                    zids = new Set(this.zoneIDs());
-                    if (zids.has(value)) return callback(new Error('ZoneID already exists'));
-                    return callback();
-                };
-                let validateNode = (rule, value, callback) => {
-                    let nids = new Set(this.nodeIDs(null));
-                    if (nids.has(value.NodeID)) return callback("NodeID already exists");
-                    return callback();
-                };
-                let validateRC = (rule, value, callback) => {
-                    if (value < 3) return callback("replication count must be greater than 3");
-                    return callback();
-                };
-                return {
-                    message: 'Hello Hermes!',
-                    metadata: null,
-                    ticker: null,
-                    tab: "overview",
-                    config: [],
-                    datazones: {},
-                    metazone: [],
-                    tl: null,
-                    adz: null,
-                    rdz: null,
-                    tlRules: {
-                        ZoneID: [
-                            {required: true, trigger: "change"}
-                        ],
-                        NodeID: [
-                            {required: true, trigger: "change"}
-                        ]
-                    },
-                    adzRules: {
-                        ZoneID: [
-                            {required: true, trigger: "change"},
-                            {type: "number", trigger: "change"},
-                            {validator: validateZoneIDNotExists, trigger: "change"}
-                        ],
-                        RC: [
-                            {validator: validateRC, trigger: "change"}
-                        ],
-                    },
-                    rdzRules: {
-                        ZoneID: [
-                            {required: true, trigger: "change"}
-                        ],
-                        Index: [
-                            {required: true, trigger: "change"},
-                            {type: "number", trigger: "change"}
-                        ]
-                    },
-                    validateNode: validateNode,
-                }
-            },
-            created: function () {
-                console.log("Hello Hermes!");
-                this.ticker = setInterval(this.getMetadata, 1000);
-            },
-            methods: {
-                handleTab(key, keyPath) {
-                    this.tab = key;
-                    switch (key) {
-                        case "transfer-leadership":
-                            this.tl = {
-                                ZoneID: null,
-                                NodeID: null,
-                            };
-                            this.$nextTick(() => this.clearValidate('tl'));
-                            break;
-                        case "add-data-zone":
-                            this.adz = {
-                                ZoneID: null,
-                                RC: 0,
-                                Nodes: [],
-                            };
-                            this.$nextTick(() => this.clearValidate('adz'));
-                            break;
-                        case "replay-data-zone":
-                            this.rdz = {
-                                ZoneID: null,
-                                Index: null,
-                            };
-                            this.$nextTick(() => this.clearValidate('rdz'));
-                            break;
-                    }
-                },
-                clearValidate(ref) {
-                    this.$refs[ref].clearValidate();
-                },
-                date2string(date) {
-                    return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`
-                },
-                isDead({row, rowIndex}) {
-                    if (row.Heartbeat.getTime() < ((new Date()).getTime() - 10 * 1000)) {
-                        return 'danger-row'
-                    }
-                    return ''
-                },
-                alertError(err) {
-                    this.$message({
-                        message: err,
-                        type: 'error',
-                    });
-                },
-                initHermes() {
-                    axios
-                        .post("/cmd/init")
-                        .then(response => {
-                            this.$message({
-                                message: 'success',
-                                type: 'success',
-                            });
-                        })
-                        .catch(this.alertError)
-                },
-                submitTL() {
-                    axios
-                        .post("/cmd/transfer-leadership", this.tl)
-                        .then(response => {
-                            this.tab = 'overview';
-                            this.$message({
-                                message: 'success',
-                                type: 'success',
-                            });
-                        })
-                        .catch(this.alertError)
-                },
-                adzMoreNode() {
-                    this.adz.Nodes.push({
-                        NodeID: null,
-                        PodID: null,
-                        key: Date.now(),
-                    });
-                    this.adz.RC = this.adz.Nodes.length;
-                },
-                adzDeleteNode(index) {
-                    this.adz.Nodes.splice(index, 1);
-                    this.adz.RC = this.adz.Nodes.length;
-                },
-                submitADZ() {
-                    axios
-                        .post("/cmd/add-data-zone", this.adz)
-                        .then(response => {
-                            this.tab = 'overview';
-                            this.$message({
-                                message: 'success',
-                                type: 'success',
-                            });
-                        })
-                        .catch(this.alertError)
-                },
-                submitRDZ() {
-                    axios
-                        .post("/cmd/replay-data-zone", this.rdz)
-                        .then(response => {
-                            this.tab = 'overview';
-                            this.$message({
-                                message: 'success',
-                                type: 'success',
-                            });
-                        })
-                        .catch(this.alertError)
-                },
-                getMetadata() {
-                    axios
-                        .get("/json/metadata")
-                        .then(response => {
-                            this.metadata = response.data;
-                            // parse config
-                            config = this.metadata.Config;
-                            tmp = [];
-                            for (var k in config) {
-                                if (k != "Pods") {
-                                    tmp.push({"key": k, "val": config[k]})
-                                } else {
-                                    s = "";
-                                    for (var i in config[k]) {
-                                        s += "<" + i + " : " + config[k][i] + "> ";
-                                    }
-                                    tmp.push({"key": k, "val": s})
-
-                                }
-                            }
-                            this.config = tmp;
-                            // parse zone
-                            metazone = [];
-                            datazones = {};
-                            metaZoneOffset = config.MetaZoneOffset;
-                            for (var i in this.metadata.RaftRecords) {
-                                // raw raft record
-                                rrr = this.metadata.RaftRecords[i];
-
-                                rr = {
-                                    ZoneID: rrr.ZoneID,
-                                    NodeID: rrr.NodeID,
-                                    PodID: rrr.PodID,
-                                    IsLeader: (rrr.IsLeader) ? ("√") : (""),
-                                    Heartbeat: new Date(rrr.Heartbeat),
-                                    HeartbeatStr: this.date2string(new Date(rrr.Heartbeat)),
-                                };
-                                if (rrr.Extra !== "") {
-                                    extra = JSON.parse(rrr.Extra);
-                                    rr.Deleted = `${extra.DeletedIndex} [${extra.DeletedIndex}]`;
-                                    rr.Persisted = `${extra.PersistedIndex - extra.DeletedIndex} [${extra.PersistedIndex}]`;
-                                    rr.Cached = `${extra.CachedIndex - extra.PersistedIndex} [${extra.CachedIndex}]`;
-                                    rr.Fresh = `${extra.FreshIndex - extra.CachedIndex} [${extra.FreshIndex}]`;
-                                }
-
-
-                                if (rr.ZoneID == metaZoneOffset) {
-                                    metazone.push(rr);
-                                    continue;
-                                }
-                                zid = rr.ZoneID;
-                                if (datazones[zid] === undefined) {
-                                    datazones[zid] = [];
-                                }
-                                datazones[zid].push(rr);
-                            }
-                            this.datazones = datazones;
-                            this.metazone = metazone;
-                        })
-                        .catch(err => {
-                            console.log(err);
-                        });
-                    // this.$http.get("/json/metadata").then();
-                },
-                podIDs() {
-                    let pids = new Set();
-                    this.metadata.RaftRecords.forEach(rr => {
-                        pids.add(rr["PodID"]);
-                    });
-                    return Array.from(pids).sort();
-                },
-                zoneIDs() {
-                    let zids = new Set();
-                    this.metadata.RaftRecords.forEach(rr => {
-                        zids.add(rr["ZoneID"]);
-                    });
-                    return Array.from(zids).sort();
-                },
-                nodeIDs(zid) {
-                    if (zid == null) {
-                        let nids = new Set();
-                        this.metadata.RaftRecords.forEach(rr => {
-                            nids.add(rr["NodeID"]);
-                        });
-                        return Array.from(nids).sort();
-                    }
-                    let nids = new Set();
-                    this.metadata.RaftRecords.forEach(rr => {
-                        if (rr["ZoneID"] == zid) {
-                            nids.add(rr["NodeID"]);
-                        }
-                    });
-                    return Array.from(nids).sort();
-                },
-
-            },
-            computed: {
-                loading() {
-                    return this.metadata === null;
-                }
-            }
-        });
-    };
-</script>
+<script src="/static/js/jquery.min.js"></script>
+<script src="/static/js/d3.v4.min.js"></script>
+<script src="/static/js/metricsgraphics.min.js"></script>
+<script src="/static/js/hermes.js"></script>
 </body>
 </html>

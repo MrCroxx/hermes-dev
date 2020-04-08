@@ -100,19 +100,10 @@ func NewMetaNode(cfg MetaNodeConfig) unit.MetaNode {
 	m.snapshotter = <-re.SnapshotterReadyC
 	m.proposeC = proposeC
 	m.advanceC = re.AdvanceC
-	m.hbTicker = time.NewTicker(time.Second * 3)
+	m.hbTicker = time.NewTicker(time.Second * 1)
 
-	// m.readCommits(re.CommitC, re.ErrorC)
 	go m.readCommits(re.CommitC, re.ErrorC)
 	go m.tickHeartbeat()
-
-	// may init metaNode zone in raft table
-
-	//metaNodes := make(map[uint64]uint64)
-	//for pid, nid := range cfg.Pods {
-	//	metaNodes[nid] = pid
-	//}
-	//_ = m.AddRaftZone(cfg.ZoneID, metaNodes)
 
 	return m
 }
