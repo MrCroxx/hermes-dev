@@ -35,6 +35,11 @@ func main() {
 	var c = flag.String("c", "", "path to hermes config file")
 	flag.Parse()
 
+	if *c == "" {
+		fmt.Println("Use -h or --help to get help.")
+		return
+	}
+
 	// Parse Hermes config file
 	cfg, err := config.ParseHermesConfigFromFile(*c)
 	if err != nil {
@@ -55,9 +60,8 @@ func main() {
 	pod := component.NewPod(*cfg, ec)
 	defer pod.Stop()
 
-
 	if cfg.WebUIPort != 0 {
-		webUI := web.NewWebUI(pod,cfg.WebUIPort)
+		webUI := web.NewWebUI(pod, cfg.WebUIPort)
 		go webUI.Start()
 		log.ZAPSugaredLogger().Infof("start metadata http server at :%d", cfg.WebUIPort)
 	}
