@@ -42,13 +42,14 @@ func serverHttp(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
-		zid := req.ZoneID
-		i := req.FirstIndex
-		for _, s := range req.Data {
-			log.ZAPSugaredLogger().Infof("zone : %d, index : %d, data : %s", zid, i, s)
-			i++
-		}
-		rsp := cmd.HermesConsumerRSP{ACK: i}
+
+		//zid := req.ZoneID
+		//i := req.FirstIndex
+		//for _, s := range req.Data {
+		//	log.ZAPSugaredLogger().Infof("zone : %d, index : %d, data : %s", zid, i, s)
+		//	i++
+		//}
+		rsp := cmd.HermesConsumerRSP{ACK: req.FirstIndex + uint64(len(req.Data))}
 		rb, err := json.Marshal(rsp)
 		if err != nil {
 			log.ZAPSugaredLogger().Error(err)

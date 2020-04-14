@@ -7,34 +7,35 @@ import (
 	"time"
 )
 
-const waterline = 10000
-
 var (
 	errWaterlineOverflow = errors.New("waterline overflow")
 )
 
 type flight struct {
-	commitC <-chan string
-	errC    chan<- error
-	client  ProducerClient
-	cache   []string
-	done    chan struct{}
-	mux     sync.Mutex
+	commitC   <-chan string
+	errC      chan<- error
+	client    ProducerClient
+	cache     []string
+	waterline int
+	done      chan struct{}
+	mux       sync.Mutex
 }
 
 type FlightConfig struct {
-	ZoneID  uint64
-	Pods    map[uint64]string
-	CommitC <-chan string
+	ZoneID    uint64
+	Pods      map[uint64]string
+	CommitC   <-chan string
+	Waterline int
 }
 
 func NewFlight(cfg FlightConfig) <-chan error {
 	eC := make(chan error)
 	f := &flight{
-		commitC: cfg.CommitC,
-		errC:    eC,
-		cache:   make([]string, 0),
-		done:    make(chan struct{}),
+		commitC:   cfg.CommitC,
+		errC:      eC,
+		cache:     make([]string, 0),
+		waterline: cfg.Waterline,
+		done:      make(chan struct{}),
 		client: NewProducerClient(ProducerClientConfig{
 			ZoneID: cfg.ZoneID,
 			Pods:   cfg.Pods,
@@ -91,7 +92,7 @@ func (f *flight) watch() {
 		case <-f.done:
 			break
 		default:
-			if len(f.cache) > waterline {
+			if len(f.cache) > f.waterline {
 				f.errC <- errWaterlineOverflow
 			}
 		}

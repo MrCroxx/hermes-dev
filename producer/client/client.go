@@ -48,8 +48,10 @@ func NewProducerClient(cfg ProducerClientConfig) ProducerClient {
 }
 
 func (c *producerClient) Send(data []string) error {
+	if len(data) == 0 {
+		return nil
+	}
 	log.ZAPSugaredLogger().Debugf("push data %d ~ %d", c.index, c.index+uint64(len(data)-1))
-
 	// check connection is established
 	if c.conn == nil {
 		return errConnNotEstablished

@@ -270,6 +270,9 @@ func (d *dataNode) startPushing() {
 			}
 			n, ack := d.pushFreshData()
 			if ack == 0 {
+				d.mux.Lock()
+				d.status.PUSH = true
+				d.mux.Unlock()
 				continue
 			}
 			d.proposeCache(n)

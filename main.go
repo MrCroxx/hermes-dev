@@ -124,16 +124,6 @@ func startCMD(pod unit.Pod) {
 
 /*
 
-add:10000:10001:1:10002:2:10003:3:10004:4:10005:5
-
-add:1:11:1:12:2:13:3
-
-add:2:22:2:23:3:24:4
-
-add:3:33:3:34:4:35:5
-
-
-
 go run mrcroxx.io/hermes -c f:\hermes-1.yaml
 
 go run mrcroxx.io/hermes -c f:\hermes-2.yaml
@@ -148,7 +138,7 @@ go run mrcroxx.io/hermes/producer
 
 go run mrcroxx.io/hermes/consumer
 
-go build mrcroxx.io/hermes
+go build mrcroxx.io/hermes & go build mrcroxx.io/hermes/producer & go build mrcroxx.io/hermes/consumer
 
 hermes.exe -c f:\hermes-1.yaml
 
@@ -160,10 +150,10 @@ hermes.exe -c f:\hermes-4.yaml
 
 hermes.exe -c f:\hermes-5.yaml
 
-wget https://unpkg.com/element-ui@2.13.0/lib/theme-chalk/index.css
-wget https://unpkg.com/element-ui@2.13.0/lib/theme-chalk/fonts/element-icons.woff
-wget https://unpkg.com/element-ui@2.13.0/lib/theme-chalk/fonts/element-icons.ttf
-wget https://unpkg.com/element-ui@2.13.0/lib/index.js
+producer.exe -c f:\hermes-producer-1.yaml
 
+producer.exe -c f:\hermes-producer-2.yaml
+
+consumer.exe
 
 */
