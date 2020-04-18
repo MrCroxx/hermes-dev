@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # custom node config
-cluster=('ivic@192.168.106.241' 'ivic@192.168.106.242' 'ivic@192.168.106.243' 'ivic@192.168.106.244')
+cluster=('ivic@192.168.106.241' 'ivic@192.168.106.242' 'ivic@192.168.106.243' 'ivic@192.168.106.244' 'ivic@192.168.106.245' 'ivic@192.168.106.246')
 producer=('ivic@192.168.106.240' 'ivic@192.168.106.240' 'ivic@192.168.106.240' 'ivic@192.168.106.240' 'ivic@192.168.106.240' 'ivic@192.168.106.240' 'ivic@192.168.106.240' 'ivic@192.168.106.240')
 consumer='ivic@192.168.106.240'
 
@@ -144,12 +144,12 @@ case $1 in
                 echo "deploy hermes-consumer on ${consumer}"
                 scp -q $GOPATH/bin/consumer ${consumer}:${HOME}/hermes-consumer
                 ;;
-        'clear')
+        'clean')
                 i=0
                 for host in ${cluster[*]}
                 do
                         let i++
-                        echo "clear hermes on ${host}"
+                        echo "clean hermes on ${host}"
                         ssh $host rm -rf ${HOME}/hermes-${i} ${HOME}/hermes ${HOME}/hermes-${i}.yaml ${HOME}/ui
                 done
 
@@ -157,14 +157,14 @@ case $1 in
                 for host in ${producer[*]}
                 do
                         let i++
-                        echo "clear hermes-producer on ${host}"
+                        echo "clean hermes-producer on ${host}"
                         ssh $host rm -f ${HOME}/hermes-producer ${HOME}/hermes-producer-${i}.yaml
                 done
 
-                echo "clear hermes-consumer on ${consumer}"
+                echo "clean hermes-consumer on ${consumer}"
                 ssh $consumer rm -f ${HOME}/hermes-consumer
                 ;;
         *)
-                echo "start | stop | ls | config | deploy | clear"
+                echo "start | stop | ls | config | deploy | clean"
                 ;;
 esac
