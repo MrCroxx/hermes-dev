@@ -86,12 +86,13 @@ func (f *flight) push() {
 func (f *flight) watch() {
 	for {
 
-		time.Sleep(time.Second * 3)
+		time.Sleep(time.Second * 1)
 
 		select {
 		case <-f.done:
 			break
 		default:
+			log.ZAPSugaredLogger().Debugf("cache len : %d", len(f.cache))
 			if len(f.cache) > f.waterline {
 				f.errC <- errWaterlineOverflow
 			}
