@@ -43,6 +43,7 @@ func NewFlight(cfg FlightConfig) <-chan error {
 	}
 	go f.push()
 	go f.start()
+	go f.watch()
 	return eC
 }
 
