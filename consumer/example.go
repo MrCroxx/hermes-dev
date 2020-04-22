@@ -50,8 +50,9 @@ func serverHttp(w http.ResponseWriter, r *http.Request) {
 		//	log.ZAPSugaredLogger().Infof("zone : %d, index : %d, data : %s", zid, i, s)
 		//	i++
 		//}
-
-		log.ZAPSugaredLogger().Infof("%d %d-%d", time.Now().Unix(), req.FirstIndex, req.FirstIndex+uint64(len(req.Data)))
+		if len(req.Data) != 0 {
+			log.ZAPSugaredLogger().Infof("%d %d-%d", time.Now().Unix(), req.FirstIndex, req.FirstIndex+uint64(len(req.Data)))
+		}
 
 		rsp := cmd.HermesConsumerRSP{ACK: req.FirstIndex + uint64(len(req.Data))}
 		rb, err := json.Marshal(rsp)
