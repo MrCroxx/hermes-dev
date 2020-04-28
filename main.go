@@ -142,7 +142,7 @@ go run mrcroxx.io/hermes/producer
 
 go run mrcroxx.io/hermes/consumer
 
-go build mrcroxx.io/hermes & go build mrcroxx.io/hermes/producer & go build mrcroxx.io/hermes/consumer
+go build mrcroxx.io/hermes && go build mrcroxx.io/hermes/producer && go build mrcroxx.io/hermes/consumer
 
 hermes.exe -c f:\hermes-1.yaml
 

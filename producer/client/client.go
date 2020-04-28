@@ -3,6 +3,7 @@ package client
 import (
 	"errors"
 	"github.com/fwhezfwhez/tcpx"
+	"math/rand"
 	"mrcroxx.io/hermes/cmd"
 	"mrcroxx.io/hermes/log"
 	"mrcroxx.io/hermes/transport"
@@ -29,6 +30,7 @@ type producerClient struct {
 	pods   map[uint64]string
 	conn   net.Conn
 	packx  *tcpx.Packx
+	terr   int
 }
 
 type ProducerClientConfig struct {
@@ -42,8 +44,10 @@ func NewProducerClient(cfg ProducerClientConfig) ProducerClient {
 		pods:   cfg.Pods,
 		podID:  1,
 		packx:  tcpx.NewPackx(tcpx.JsonMarshaller{}),
+		terr:   0,
 	}
-	go c.tryConn()
+	rand.Seed(time.Now().Unix())
+	//go c.tryConn()
 	return c
 }
 
@@ -54,7 +58,8 @@ func (c *producerClient) Send(data []string) error {
 	log.ZAPSugaredLogger().Debugf("push data %d ~ %d", c.index, c.index+uint64(len(data)-1))
 	// check connection is established
 	if c.conn == nil {
-		return errConnNotEstablished
+		c.tryConn()
+		//return errConnNotEstablished
 	}
 	// encode message
 	req := cmd.HermesProducerCMD{
@@ -115,10 +120,23 @@ func (c *producerClient) tryConn() {
 	c.conn = nil
 	var err error
 	for {
-		c.conn, err = net.Dial("tcp", c.pods[c.podID])
+		log.ZAPSugaredLogger().Infof("try conn ...")
+		c.conn, err = net.DialTimeout("tcp", c.pods[c.podID], time.Millisecond*100)
 		if err == nil {
+			c.terr = 0
 			return
 		}
-		time.Sleep(time.Millisecond * 100)
+		c.terr++
+		if c.terr > 3 {
+			p := c.podID
+			pids := []uint64{}
+			for pid, _ := range c.pods {
+				if pid != p {
+					pids = append(pids, pid)
+				}
+			}
+			c.podID = pids[rand.Intn(len(pids))]
+			log.ZAPSugaredLogger().Errorf("Error raised when connecting to pod %d, redirect to %d.", p, c.podID)
+		}
 	}
 }

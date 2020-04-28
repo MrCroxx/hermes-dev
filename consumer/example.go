@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"mrcroxx.io/hermes/cmd"
@@ -50,8 +51,9 @@ func serverHttp(w http.ResponseWriter, r *http.Request) {
 		//	log.ZAPSugaredLogger().Infof("zone : %d, index : %d, data : %s", zid, i, s)
 		//	i++
 		//}
+
 		if len(req.Data) != 0 {
-			log.ZAPSugaredLogger().Infof("%d %d-%d", time.Now().Unix(), req.FirstIndex, req.FirstIndex+uint64(len(req.Data)))
+			fmt.Println(time.Now().Unix(), req.FirstIndex, req.FirstIndex+uint64(len(req.Data))-1)
 		}
 
 		rsp := cmd.HermesConsumerRSP{ACK: req.FirstIndex + uint64(len(req.Data))}
