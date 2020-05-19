@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # custom node config
-cluster=('ivic@192.168.106.241' 'ivic@192.168.106.242' 'ivic@192.168.106.243' 'ivic@192.168.106.244' 'ivic@192.168.106.245' 'ivic@192.168.106.246')
-producer=('ivic@192.168.106.240' 'ivic@192.168.106.240' 'ivic@192.168.106.240' 'ivic@192.168.106.240' 'ivic@192.168.106.240')
+cluster=('ivic@192.168.106.241' 'ivic@192.168.106.242' 'ivic@192.168.106.243' 'ivic@192.168.106.244')
+producer=('ivic@192.168.106.240' 'ivic@192.168.106.240' 'ivic@192.168.106.240' 'ivic@192.168.106.240')
 consumer='ivic@192.168.106.240'
 
 # custom hermes config
@@ -26,6 +26,8 @@ ConsumerPort=15500
 # script
 case $1 in
         'start')
+                echo "start hermes-consumer on ${consumer}"
+                ssh $consumer screen -S hermes-consumer -dm "${HOME}/hermes-consumer"
                 i=0
                 for host in ${cluster[*]}
                 do
@@ -40,6 +42,8 @@ case $1 in
                         echo "stop hermes on ${host}"
                         ssh $host screen -S hermes -X quit
                 done
+                echo "stop hermes-consumer on $consumer"
+                ssh $consumer screen -S hermes-consumer -X quit
                 ;;
         'ls')
                 for host in ${cluster[*]}
