@@ -57,7 +57,7 @@ func serverHttp(w http.ResponseWriter, r *http.Request) {
 		//}
 
 		if len(req.Data) != 0 {
-			fmt.Printf("%s receive %d - %d.", time.Now(), req.FirstIndex, req.FirstIndex+uint64(len(req.Data))-1)
+			fmt.Printf("%s receive %d - %d.\n", time.Now(), req.FirstIndex, req.FirstIndex+uint64(len(req.Data))-1)
 		}
 
 		rsp := cmd.HermesConsumerRSP{ACK: req.FirstIndex + uint64(len(req.Data))}
